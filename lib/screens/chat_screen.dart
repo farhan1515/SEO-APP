@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:seo_app/services/user_status.dart';
 
 import '../widgets/image_viewer.dart';
+import 'history_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   final String recipientId;
@@ -312,12 +313,28 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ],
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.more_vert, color: Colors.black87),
-            onPressed: () {},
+       actions: [
+  PopupMenuButton<String>(
+    icon: const Icon(Icons.more_vert, color: Colors.black87),
+    onSelected: (value) {
+      if (value == 'history') {
+        // Navigate to HistoryScreen
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (context) => HistoryScreen(chatId: _chatId),
           ),
-        ],
+        );
+      }
+    },
+    itemBuilder: (context) => [
+      const PopupMenuItem(
+        value: 'history',
+        child: Text('History'),
+      ),
+    ],
+  ),
+],
       ),
       body: Container(
         decoration: BoxDecoration(

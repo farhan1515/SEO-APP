@@ -1,6 +1,9 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:seo_app/screens/chat_list_screen.dart';
 import 'package:seo_app/screens/chat_screen.dart';
+import 'package:seo_app/screens/post_detail_screen.dart';
 import 'package:seo_app/screens/profile_screen.dart';
 import 'package:seo_app/theme/text_style.dart';
 import 'package:seo_app/screens/post_request_screen.dart';
@@ -10,6 +13,8 @@ import 'package:seo_app/widgets/show_post_list.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:seo_app/screens/signin_screen.dart'; // Update with your actual path
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({Key? key}) : super(key: key);
@@ -21,6 +26,29 @@ class DashboardScreen extends StatefulWidget {
 class _DashboardScreenState extends State<DashboardScreen> {
   final List<String> _selectedPlatforms = [];
   String _selectedTab = 'today';
+  List<Map<String, dynamic>> _upcomingPosts = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchUpcomingPosts();
+  }
+
+  Future<void> _fetchUpcomingPosts() async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return;
+
+    final now = DateTime.now();
+    final postsSnapshot = await FirebaseFirestore.instance
+        .collection('post_requests')
+        .where('scheduled_date', isGreaterThanOrEqualTo: now.toIso8601String())
+        .orderBy('scheduled_date')
+        .get();
+
+    setState(() {
+      _upcomingPosts = postsSnapshot.docs.map((doc) => doc.data()).toList();
+    });
+  }
 
   void _handleTabSelected(String tab) {
     setState(() {
@@ -31,7 +59,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    
 
     return Scaffold(
       backgroundColor: Color(0xFFc9dee7),
@@ -46,6 +73,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
                     children: [
                       Container(
                         padding: const EdgeInsets.all(8),
@@ -70,42 +98,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                       ),
                       const SizedBox(
-                        width: 20,
-                      ),
-                      Icon(Icons
-                          .add_alert), // In DashboardScreen's build method, update the person icon:
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF4B6BFB).withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: IconButton(
-                          icon: const Icon(
-                            Icons.person_2_rounded,
-                            color: Color(0xFF4B6BFB),
-                            size: 24,
-                          ),
-                          onPressed: () {
-                            // Navigate to ProfileScreen with the current user's ID
-                            final user = FirebaseAuth.instance.currentUser;
-                            if (user != null) {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) =>
-                                      ProfileScreen(userId: user.uid),
-                                ),
-                              );
-                            } else {
-                              // Handle case where user is not logged in
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text('User not logged in!')),
-                              );
-                            }
-                          },
-                        ),
+                        width: 60,
                       ),
                     ],
                   ),
@@ -128,167 +121,127 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
               const SizedBox(height: 20),
 
-              // Social Media Row
-              // Row(
-              //   mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              //   children: [
-              //     Expanded(
-              //       flex: 1,
-              //       child: _SocialMediaButton(
-              //         title: 'Facebook',
-              //         icon: Icon(LucideIcons.facebook, size: 20),
-              //         color: const Color(0xFF1877F2),
-              //         isSelected: _selectedPlatforms.contains('facebook'),
-              //         onToggle: (selected) {
-              //           setState(() {
-              //             if (selected) {
-              //               _selectedPlatforms.add('facebook');
-              //             } else {
-              //               _selectedPlatforms.remove('facebook');
-              //             }
-              //           });
-              //         },
-              //       ),
-              //     ),
-              //     const SizedBox(width: 8),
-              //     Expanded(
-              //       flex: 1,
-              //       child: _SocialMediaButton(
-              //         title: 'Instagram',
-              //         icon: Icon(LucideIcons.instagram, size: 20),
-              //         color: const Color(0xFFE4405F),
-              //         isSelected: _selectedPlatforms.contains('instagram'),
-              //         onToggle: (selected) {
-              //           setState(() {
-              //             if (selected) {
-              //               _selectedPlatforms.add('instagram');
-              //             } else {
-              //               _selectedPlatforms.remove('instagram');
-              //             }
-              //           });
-              //         },
-              //       ),
-              //     ),
-              //     const SizedBox(width: 8),
-              //     Expanded(
-              //       flex: 1,
-              //       child: _SocialMediaButton(
-              //         title: 'WhatsApp',
-              //         icon: Image.asset(
-              //           "assets/icons/whatsapp.png",
-              //           height: 20,
-              //           width: 20,
-              //           fit: BoxFit.contain,
-              //         ),
-              //         color: const Color(0xFF25D366),
-              //         isSelected: _selectedPlatforms.contains('whatsapp'),
-              //         onToggle: (selected) {
-              //           setState(() {
-              //             if (selected) {
-              //               _selectedPlatforms.add('whatsapp');
-              //             } else {
-              //               _selectedPlatforms.remove('whatsapp');
-              //             }
-              //           });
-              //         },
-              //       ),
-              //     ),
-              //   ],
-              // ),
+              Text(
+                "Upcoming",
+                style: lexand.copyWith(),
+              ),
 
-              const SizedBox(height: 40),
-
-              Wrap(
-                alignment: WrapAlignment.center,
-                spacing: 10.0,
-                runSpacing: 15.0,
-                children: [
-                  // Post Button
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      // Navigate to PostRequestScreen
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (context) => PostRequestScreen()),
-                      );
-                    },
-                    icon: const Icon(Icons.post_add, color: Colors.white),
-                    label: const Text(
-                      'Post',
-                      style: TextStyle(
-                          color: Colors.white, fontWeight: FontWeight.bold),
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF4B6BFB),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                  ),
-
-                  // Chat Button
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      // Navigate to ChatScreen
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (context) => ChatScreen(
-                                  recipientId:
-                                      'recipient_user_id', // Replace with actual recipient's UID
-                                  recipientName: 'Recipient Name',
-                                )),
-                      );
-                    },
-                    icon: const Icon(Icons.chat, color: Colors.white),
-                    label: const Text(
-                      'Ask SEO',
-                      style: TextStyle(
-                          color: Colors.white, fontWeight: FontWeight.bold),
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF4B6BFB),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                  ),
-
-                  // Messages Button
-                  ElevatedButton.icon(
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => const ChatListScreen(),
+              // Upcoming Posts Carousel
+              SizedBox(
+                height: 200, // Adjust height as needed
+                child: StreamBuilder<QuerySnapshot>(
+                  stream: FirebaseFirestore.instance
+                      .collection('post_requests')
+                      .where('scheduled_date',
+                          isGreaterThanOrEqualTo:
+                              DateTime.now().toIso8601String())
+                      .orderBy('scheduled_date')
+                      .snapshots(), // Firestore stream
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      // Show a loading indicator while data is being fetched
+                      return Center(child: CircularProgressIndicator());
+                    } else if (snapshot.hasError) {
+                      // Show an error message if something went wrong
+                      return Center(child: Text('Error: ${snapshot.error}'));
+                    } else if (!snapshot.hasData ||
+                        snapshot.data!.docs.isEmpty) {
+                      // Show a message if there are no posts
+                      return Center(
+                        child: Text(
+                          'No upcoming posts',
+                          style: lexand.copyWith(),
                         ),
                       );
-                    },
-                    icon: const Icon(Icons.chat, color: Colors.white),
-                    label: const Text(
-                      'Messages',
-                      style: TextStyle(
-                          color: Colors.white, fontWeight: FontWeight.bold),
-                      overflow: TextOverflow.ellipsis,
+                    } else {
+                      // Data is available, display the posts
+                      final posts = snapshot.data!.docs
+                          .map((doc) => doc.data() as Map<String, dynamic>)
+                          .toList();
+                      return ListView.builder(
+                        scrollDirection: Axis.horizontal,
+                        itemCount: posts.length,
+                        itemBuilder: (context, index) {
+                          final post = posts[index];
+                          return _buildPostCard(context, post);
+                        },
+                      );
+                    }
+                  },
+                ),
+              ),
+
+              ButtonGroup(
+                onTabSelected: _handleTabSelected, // Pass callback
+              ),
+              const SizedBox(height: 10),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    flex: 1,
+                    child: _SocialMediaButton(
+                      title: 'Facebook',
+                      icon: Icon(LucideIcons.facebook, size: 20),
+                      color: const Color(0xFF1877F2),
+                      isSelected: _selectedPlatforms.contains('facebook'),
+                      onToggle: (selected) {
+                        setState(() {
+                          if (selected) {
+                            _selectedPlatforms.add('facebook');
+                          } else {
+                            _selectedPlatforms.remove('facebook');
+                          }
+                        });
+                      },
                     ),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF4B6BFB),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    flex: 1,
+                    child: _SocialMediaButton(
+                      title: 'Instagram',
+                      icon: Icon(LucideIcons.instagram, size: 20),
+                      color: const Color(0xFFE4405F),
+                      isSelected: _selectedPlatforms.contains('instagram'),
+                      onToggle: (selected) {
+                        setState(() {
+                          if (selected) {
+                            _selectedPlatforms.add('instagram');
+                          } else {
+                            _selectedPlatforms.remove('instagram');
+                          }
+                        });
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    flex: 1,
+                    child: _SocialMediaButton(
+                      title: 'WhatsApp',
+                      icon: Image.asset(
+                        "assets/icons/whatsapp.png",
+                        height: 20,
+                        width: 20,
+                        fit: BoxFit.contain,
                       ),
+                      color: const Color(0xFF25D366),
+                      isSelected: _selectedPlatforms.contains('whatsapp'),
+                      onToggle: (selected) {
+                        setState(() {
+                          if (selected) {
+                            _selectedPlatforms.add('whatsapp');
+                          } else {
+                            _selectedPlatforms.remove('whatsapp');
+                          }
+                        });
+                      },
                     ),
                   ),
                 ],
               ),
-              SizedBox(
-                height: 40,
-              ),
-              // Replace the existing ButtonGroup() with:
-              ButtonGroup(
-                onTabSelected: _handleTabSelected, // Pass callback
-              ),
+              const SizedBox(height: 10),
 
               Expanded(
                 child: PostListScreen(
@@ -323,66 +276,71 @@ class _SocialMediaButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return GestureDetector(
-          onTap: () => onToggle(!isSelected),
-          child: Container(
-            constraints: BoxConstraints(
-              maxWidth: constraints.maxWidth,
-              minHeight: 40,
+    double size = MediaQuery.of(context).size.width * 0.12; // Responsive size
+
+    return Tooltip(
+      message: title,
+      child: GestureDetector(
+        onTap: () => onToggle(!isSelected),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            color: isSelected ? Colors.white : Colors.grey[100],
+            shape: BoxShape.circle,
+            boxShadow: isSelected
+                ? [
+                    BoxShadow(
+                      color: color.withOpacity(0.2),
+                      blurRadius: 8,
+                      spreadRadius: 2,
+                    )
+                  ]
+                : null,
+            border: Border.all(
+              color: isSelected ? color : Colors.grey.shade300,
+              width: 2,
             ),
-            decoration: BoxDecoration(
-              color: isSelected ? const Color(0xFF4db7d7) : Colors.white,
-              borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color:
-                    isSelected ? const Color(0xFF4db7d7) : Colors.grey.shade300,
-                width: 1,
+          ),
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              Container(
+                width: size * 0.4, // Adjusted size for better centering
+                height: size * 0.4,
+                child: FittedBox(
+                  fit: BoxFit.contain,
+                  child: icon,
+                ),
               ),
-            ),
-            child: Padding(
-              padding:
-                  const EdgeInsets.symmetric(vertical: 8.0, horizontal: 10.0),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  FittedBox(
-                    child: icon is Image
-                        ? SizedBox(
-                            width: 20,
-                            height: 20,
-                            child: FittedBox(child: icon))
-                        : icon,
-                  ),
-                  const SizedBox(width: 8),
-                  Flexible(
-                    child: FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        title,
-                        style: texts.copyWith(
-                          fontSize: 16,
-                          color: isSelected ? Colors.white : Colors.black,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+              if (isSelected)
+                Positioned(
+                  top: size * 0.08,
+                  right: size * 0.08,
+                  child: Container(
+                    width: size * 0.25,
+                    height: size * 0.25,
+                    decoration: BoxDecoration(
+                      color: color,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Colors.white,
+                        width: 2,
                       ),
                     ),
                   ),
-                ],
-              ),
-            ),
+                ),
+            ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 }
 
 class ButtonGroup extends StatefulWidget {
-  final Function(String) onTabSelected; // Add this callback
+  final Function(String) onTabSelected; // Callback function
 
   const ButtonGroup({Key? key, required this.onTabSelected}) : super(key: key);
 
@@ -399,7 +357,7 @@ class _ButtonGroupState extends State<ButtonGroup> {
   @override
   Widget build(BuildContext context) {
     return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceAround,
+      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
       children: [
         _buildButton(0, 'All'),
         _buildButton(1, 'Upcoming'),
@@ -409,87 +367,218 @@ class _ButtonGroupState extends State<ButtonGroup> {
   }
 
   Widget _buildButton(int index, String text) {
-    return ElevatedButton(
-      onPressed: () {
+    bool isSelected = selectedIndex == index;
+
+    return GestureDetector(
+      onTap: () {
         setState(() {
           selectedIndex = index;
         });
         widget.onTabSelected(_tabs[index]); // Notify parent
       },
-      style: ElevatedButton.styleFrom(
-        backgroundColor:
-            selectedIndex == index ? const Color(0xFF4B6BFB) : Colors.white,
-        shape: RoundedRectangleBorder(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? Color.fromRGBO(62, 24, 133, 0.15)
+              : Color(0xFFF6F6F6),
           borderRadius: BorderRadius.circular(8),
         ),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: selectedIndex == index ? Colors.white : Colors.black,
-          fontWeight: FontWeight.bold,
+        child: Text(
+          text,
+          style: lexand.copyWith(
+            color: isSelected ? const Color(0xFF3E1885) : Color(0xFFCECECE),
+            fontWeight: FontWeight.bold,
+            fontSize: 16,
+          ),
         ),
       ),
     );
   }
 }
 
-class _DashboardOption extends StatelessWidget {
-  final String title;
-  final IconData icon;
-  final Color color;
-  final VoidCallback onTap;
+String _formatScheduledDateTime(String scheduledDate, String scheduledTime) {
+  try {
+    // Parse the scheduled date
+    final date = DateTime.parse(scheduledDate);
 
-  const _DashboardOption({
-    required this.title,
-    required this.icon,
-    required this.color,
-    required this.onTap,
-  });
+    // Parse the scheduled time
+    final timeFormat =
+        DateFormat('HH:mm'); // Assuming scheduled_time is in "HH:mm" format
+    final timeOfDay = timeFormat.parse(scheduledTime);
 
-  @override
-  Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
+    // Combine date and time
+    final combinedDateTime = DateTime(
+      date.year,
+      date.month,
+      date.day,
+      timeOfDay.hour,
+      timeOfDay.minute,
+    );
 
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          color: color.withOpacity(0.1),
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(
-            color: color.withOpacity(0.3),
-            width: 2,
+    // Format the combined DateTime
+    return DateFormat('MMM dd, yyyy - hh:mm a').format(combinedDateTime);
+  } catch (e) {
+    print('Error formatting scheduled date and time: $e');
+    return 'Invalid Date/Time';
+  }
+}
+
+Widget _buildPostCard(BuildContext context, Map<String, dynamic> post) {
+  return GestureDetector(
+    onTap: () {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => PostDetailScreen(
+            post: {
+              'title': post['title'] ?? 'No Title',
+              'description': post['description'] ?? '',
+              'highlight_text': post['highlighted_text'],
+              'image_base64': post['image_base64'],
+              'posted_by': post['user_name'] ?? 'Anonymous',
+              'created_at': post['scheduled_date'] ??
+                  DateTime.now().toString(), // Ensure valid date
+              'platforms': post['platforms'] ?? [],
+              'user_id': post['user_id'] ?? 'Anonymous',
+              'user_name': post['user_name'] ?? 'Anonymous',
+              'id': post['id'] ?? '', // Add ID if available
+            },
           ),
         ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+      );
+    },
+    child: Container(
+      constraints: const BoxConstraints(maxWidth: 500),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.withOpacity(0.1),
+            spreadRadius: 1,
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: color.withOpacity(0.2),
-                shape: BoxShape.circle,
-              ),
-              child: Icon(
-                icon,
-                color: color,
-                size: screenWidth < 360 ? 28 : 32,
+            // Left side - Image
+            Expanded(
+              flex: 2,
+              child: Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(16),
+                  child: post['image_base64'] != null
+                      ? Image.memory(
+                          base64Decode(post['image_base64']),
+                          fit: BoxFit.cover,
+                        )
+                      : Container(
+                          color: Colors.grey[200],
+                          child: const Center(
+                            child: Icon(LucideIcons.image,
+                                size: 40, color: Colors.grey),
+                          ),
+                        ),
+                ),
               ),
             ),
-            SizedBox(height: screenWidth < 360 ? 12 : 16),
-            Text(
-              title,
-              style: lexand.copyWith(
-                fontSize: screenWidth < 360 ? 14 : 16,
-                fontWeight: FontWeight.w600,
-                color: color,
+
+            // Middle Section - Title, Description, and Scheduled Date
+            Expanded(
+              flex: 3,
+              child: Padding(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    // Title and Description
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          post['title'] ?? 'No Title',
+                          style: lexand.copyWith(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          post['description'] ?? 'No Description',
+                          style: lexand.copyWith(
+                            fontSize: 14,
+                            color: Colors.grey[600],
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+
+                    // Scheduled Date
+                    Text(
+                      'Scheduled: ${_formatScheduledDateTime(post['scheduled_date'], post['scheduled_time'])}',
+                      style: lexand.copyWith(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.orange,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Right Section - Platform Icons in a Vertical Column
+            Container(
+              width: 60, // Fixed width for the platform icons column
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    children: (post['platforms'] as List<dynamic>? ?? [])
+                        .map<Widget>(
+                          (platform) => Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: _getPlatformIcon(platform),
+                          ),
+                        )
+                        .toList(),
+                  ),
+                ],
               ),
             ),
           ],
         ),
       ),
-    );
+    ),
+  );
+}
+
+Widget _getPlatformIcon(String platform) {
+  switch (platform.toLowerCase()) {
+    case 'facebook':
+      return Icon(LucideIcons.facebook, size: 20);
+    case 'instagram':
+      return Icon(LucideIcons.instagram, size: 20);
+    case 'whatsapp':
+      return Image.asset(
+        "assets/icons/whatsapp.png",
+        height: 20,
+        width: 20,
+      );
+    default:
+      return Icon(LucideIcons.link, size: 20);
   }
 }
 

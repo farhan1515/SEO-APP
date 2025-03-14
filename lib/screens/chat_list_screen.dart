@@ -41,20 +41,25 @@ class ChatListScreen extends StatelessWidget {
       appBar: AppBar(
         elevation: 0,
         backgroundColor: Colors.white,
-        leading: Padding(
-          padding: const EdgeInsets.only(left: 10),
-          child: IconButton(
-            icon: const Icon(Icons.arrow_back_ios, color: Colors.black87),
-            onPressed: () => Navigator.pop(context),
-          ),
-        ),
-        title: const Text(
+        // leading: Padding(
+        //   padding: const EdgeInsets.only(left: 10),
+        //   child: IconButton(
+        //     icon: const Icon(Icons.arrow_back_ios, color: Colors.black87),
+        //     onPressed: () => Navigator.pop(context),
+        //   ),
+        // ),
+        title: Text(
           'Messages',
-          style: TextStyle(
+          style: lexand.copyWith(
             fontSize: 24,
             fontWeight: FontWeight.bold,
             color: Colors.black,
           ),
+          // style: TextStyle(
+          //   fontSize: 24,
+          //   fontWeight: FontWeight.bold,
+          //   color: Colors.black,
+          // ),
         ),
         centerTitle: true,
         // actions: [
@@ -95,20 +100,25 @@ class ChatListScreen extends StatelessWidget {
                   const SizedBox(height: 24),
                   Text(
                     'No messages yet',
-                    style: TextStyle(
+                    style: lexand.copyWith(
                       fontSize: 20,
                       fontWeight: FontWeight.w600,
                       color: Colors.grey[800],
                     ),
+                    // style: TextStyle(
+                    //   fontSize: 20,
+                    //   fontWeight: FontWeight.w600,
+                    //   color: Colors.grey[800],
+                    // ),
                   ),
                   const SizedBox(height: 8),
-                  Text(
-                    'Start chatting with your contacts',
-                    style: TextStyle(
-                      fontSize: 16,
-                      color: Colors.grey[600],
-                    ),
-                  ),
+                  // Text(
+                  //   'Start chatting with your contacts',
+                  //   style: TextStyle(
+                  //     fontSize: 16,
+                  //     color: Colors.grey[600],
+                  //   ),
+                  // ),
                 ],
               ),
             );

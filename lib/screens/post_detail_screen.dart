@@ -74,17 +74,30 @@ class PostDetailScreen extends StatelessWidget {
     }
   }
 
-  void _navigateToEditScreen(BuildContext context) {
-    Navigator.pushReplacement(
-      context,
-      MaterialPageRoute(
-        builder: (context) => PostRequestScreen(
-          postId: post['id'], // Make sure you're passing document ID
-          existingData: post,
-        ),
+ void _navigateToEditScreen(BuildContext context) {
+  Navigator.pushReplacement(
+    context,
+    MaterialPageRoute(
+      builder: (context) => PostRequestScreen(
+        postId: post['id'], // Make sure you're passing document ID
+        existingData: {
+          'title': post['title'],
+          'description': post['description'],
+          'highlighted_text': post['highlight_text'], // Add this
+          'image_base64': post['image_base64'],
+          'user_id': post['user_id'],
+          'user_name': post['user_name'],
+          'created_at': post['created_at'],
+          'platforms': post['platforms'],
+          'scheduled_date': post['scheduled_date'], // Add this
+          'scheduled_time': post['scheduled_time'], // Add this
+          'scheduled_timezone': post['scheduled_timezone'], // Add this
+          'recurring_schedule': post['recurring_schedule'], // Add this
+        },
       ),
-    );
-  }
+    ),
+  );
+}
 
   void _confirmDelete(BuildContext context) {
     showDialog(

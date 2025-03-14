@@ -2,12 +2,11 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:seo_app/screens/post_detail_screen.dart';
-import 'package:seo_app/screens/post_request_screen.dart';
 import 'package:seo_app/theme/text_style.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-class PostListScreen extends StatelessWidget {
+class PostListScreen extends StatefulWidget {
   final List<String> selectedPlatforms;
   final String selectedTab;
   final String userId;
@@ -19,17 +18,75 @@ class PostListScreen extends StatelessWidget {
     required this.userId,
   }) : super(key: key);
 
-  void _navigateToEditScreen(
-      BuildContext context, String docId, Map<String, dynamic> data) {
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => PostRequestScreen(
-          postId: docId,
-          existingData: data,
-        ),
-      ),
-    );
+  @override
+  State<PostListScreen> createState() => _PostListScreenState();
+}
+
+class _PostListScreenState extends State<PostListScreen> {
+  late Stream<QuerySnapshot> _postsStream;
+  List<DocumentSnapshot> _cachedPosts = [];
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _setupPostsStream();
+  }
+
+  @override
+  void didUpdateWidget(PostListScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.selectedPlatforms != widget.selectedPlatforms ||
+        oldWidget.selectedTab != widget.selectedTab ||
+        oldWidget.userId != widget.userId) {
+      _setupPostsStream();
+    }
+  }
+
+  void _setupPostsStream() {
+    setState(() {
+      _isLoading = true;
+    });
+
+    _postsStream = _getPostsStream();
+
+    // Load initial data
+    _postsStream.first.then((snapshot) {
+      if (mounted) {
+        setState(() {
+          _cachedPosts = snapshot.docs;
+          _isLoading = false;
+        });
+      }
+    });
+  }
+
+  Stream<QuerySnapshot> _getPostsStream() {
+    if (widget.selectedTab == 'prior') {
+      return FirebaseFirestore.instance
+          .collection('post_requests')
+          .where('user_id', isEqualTo: widget.userId)
+          .orderBy('created_at', descending: true)
+          .snapshots();
+    } else {
+      return FirebaseFirestore.instance
+          .collection('post_requests')
+          .orderBy('created_at', descending: true)
+          .snapshots();
+    }
+  }
+
+  List<DocumentSnapshot> _filterPostsByPlatform(List<DocumentSnapshot> docs) {
+    if (widget.selectedPlatforms.isEmpty) {
+      return docs;
+    }
+
+    return docs.where((doc) {
+      final data = doc.data() as Map<String, dynamic>;
+      final platforms = List<String>.from(data['platforms'] ?? []);
+      return widget.selectedPlatforms.any((platform) =>
+          platforms.contains(platform.toLowerCase()));
+    }).toList();
   }
 
   @override
@@ -38,8 +95,16 @@ class PostListScreen extends StatelessWidget {
       backgroundColor: Colors.transparent,
       body: SafeArea(
         child: StreamBuilder<QuerySnapshot>(
-          stream: _getPostsStream(),
+          stream: _postsStream,
           builder: (context, snapshot) {
+            // Show loading indicator only on initial load
+            if (_isLoading) {
+              return const Center(
+                child: CircularProgressIndicator(),
+              );
+            }
+
+            // Handle errors
             if (snapshot.hasError) {
               return Center(
                 child: Text(
@@ -49,59 +114,32 @@ class PostListScreen extends StatelessWidget {
               );
             }
 
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(
-                child: CircularProgressIndicator(),
-              );
+            // Update cache when new data arrives
+            if (snapshot.hasData) {
+              _cachedPosts = snapshot.data!.docs;
             }
 
-            if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-              return Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(
-                      Icons.article_outlined,
-                      size: 64,
-                      color: Colors.grey[400],
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      'No posts yet',
-                      style: TextStyle(
-                        fontSize: 18,
-                        color: Colors.grey[600],
-                      ),
-                    ),
-                  ],
-                ),
-              );
-            }
+            // Filter posts by platform
+            final filteredDocs = _filterPostsByPlatform(_cachedPosts);
 
-            // Filter posts based on selected platforms
-            final filteredDocs = selectedPlatforms.isEmpty
-                ? snapshot.data!.docs
-                : snapshot.data!.docs.where((doc) {
-                    final data = doc.data() as Map<String, dynamic>;
-                    final platforms =
-                        List<String>.from(data['platforms'] ?? []);
-                    return selectedPlatforms.any((platform) =>
-                        platforms.contains(platform.toLowerCase()));
-                  }).toList();
-
+            // Show "no posts" message when appropriate
             if (filteredDocs.isEmpty) {
               return Center(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Icon(
-                      Icons.filter_list,
+                      widget.selectedPlatforms.isEmpty
+                          ? Icons.article_outlined
+                          : Icons.filter_list,
                       size: 64,
                       color: Colors.grey[400],
                     ),
                     const SizedBox(height: 16),
                     Text(
-                      'No posts found for selected platforms',
+                      widget.selectedPlatforms.isEmpty
+                          ? 'No posts yet'
+                          : 'No posts found for selected platforms',
                       style: TextStyle(
                         fontSize: 18,
                         color: Colors.grey[600],
@@ -144,166 +182,143 @@ class PostListScreen extends StatelessWidget {
                             'platforms': data['platforms'] ?? [],
                             'user_id': data['user_id'] ?? 'Anonymous',
                             'user_name': data['user_name'] ?? 'Anonymous',
-                            'id': doc.id, // Add document ID to post data
+                            'id': doc.id,
                           },
                         ),
                       ),
                     );
                   },
-                  child: Card(
-                    color: Colors.white,
+                  child: Container(
                     margin: const EdgeInsets.all(6),
-                    shape: RoundedRectangleBorder(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
                       borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.grey.withOpacity(0.3),
+                          blurRadius: 8,
+                          spreadRadius: 1,
+                          offset: const Offset(0, 0),
+                        ),
+                      ],
                     ),
-                    elevation: 2,
-                    child: IntrinsicHeight(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            child: data['image_base64'] != null
-                                ? Padding(
-                                    padding: const EdgeInsets.all(6.0),
-                                    child: ClipRRect(
-                                      borderRadius: BorderRadius.circular(12),
-                                      child: Image.memory(
-                                        base64Decode(data['image_base64']),
-                                        height: 120,
-                                        width: 120,
-                                        fit: BoxFit.cover,
-                                        errorBuilder:
-                                            (context, error, stackTrace) {
-                                          return Container(
-                                            height: 120,
-                                            width: 120,
-                                            color: Colors.grey[300],
-                                            child: const Icon(
-                                                Icons.image_not_supported,
-                                                color: Colors.grey),
-                                          );
-                                        },
-                                      ),
-                                    ),
-                                  )
-                                : ClipRRect(
-                                    borderRadius: const BorderRadius.only(
-                                      topLeft: Radius.circular(16),
-                                      bottomLeft: Radius.circular(16),
-                                    ),
-                                    child: Container(
-                                      height: 120,
-                                      width: 120,
-                                      color: Colors.grey[300],
-                                      child: const Icon(
-                                          Icons.image_not_supported,
-                                          color: Colors.grey),
-                                    ),
-                                  ),
-                          ),
-                          Expanded(
-                            child: Padding(
-                              padding: const EdgeInsets.all(12),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    data['title'] ?? 'Untitled',
-                                    style: texts.copyWith(
-                                        color: const Color(0xFF001d35),
-                                        fontSize: 16),
-                                  ),
-                                  const SizedBox(height: 4),
-                                  Text(
-                                    data['description'] ?? '',
-                                    style: texts.copyWith(
-                                        color: const Color(0xFF545454),
-                                        fontSize: 13),
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                  const SizedBox(height: 4),
-                                  if (data['highlighted_text'] != null)
-                                    Text(
-                                      data['highlighted_text'],
-                                      style: texts.copyWith(
-                                          color: const Color(0xFF545454),
-                                          fontSize: 12),
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                    ),
-                                  const Spacer(),
-                                  Row(
-                                    mainAxisAlignment:
-                                        MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          'BY: ${data['user_name'] ?? 'Anonymous'}',
-                                          style: texts.copyWith(
-                                              fontSize: 12,
-                                              color: const Color(0xFFff9500)),
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      Text(
-                                        timeAgo,
-                                        style: texts.copyWith(
-                                          color: const Color(0xFF23a93b)
-                                              .withOpacity(0.5),
-                                          fontSize: 12,
-                                        ),
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ],
-                                  ),
-                                ],
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (data['image_base64'] != null)
+                          Padding(
+                            padding: const EdgeInsets.all(12.0),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(15),
+                              child: Container(
+                                width: double.infinity, // Take full width
+                                child: _buildImage(data['image_base64']),
                               ),
                             ),
                           ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 12,
-                            ),
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Column(
-                                  children: (data['platforms']
-                                              as List<dynamic>? ??
-                                          [])
-                                      .map<Widget>(
-                                        (platform) => Padding(
-                                          padding: const EdgeInsets.symmetric(
-                                              vertical: 4),
-                                          child: _getPlatformIcon(platform),
-                                        ),
-                                      )
-                                      .toList(),
+                        Padding(
+                          padding: const EdgeInsets.all(12),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                data['title'] ?? 'Untitled',
+                                style: texts.copyWith(
+                                    color: const Color(0xFF001d35),
+                                    fontSize: 16),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                data['description'] ?? '',
+                                style: texts.copyWith(
+                                    color: const Color(0xFF545454),
+                                    fontSize: 13),
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 4),
+                              if (data['highlighted_text'] != null)
+                                Text(
+                                  data['highlighted_text'],
+                                  style: texts.copyWith(
+                                      color: const Color(0xFF545454),
+                                      fontSize: 12),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
-                                // if (data['user_id'] == userId)
-                                //   IconButton(
-                                //     icon: const Icon(Icons.edit,
-                                //         color: Colors.blue),
-                                //     onPressed: () => _navigateToEditScreen(
-                                //         context, doc.id, data),
-                                //     padding: EdgeInsets.zero,
-                                //     constraints: const BoxConstraints(),
-                                //     iconSize: 20,
-                                //   ),
-                              ],
-                            ),
+                              const SizedBox(height: 8),
+                              Row(
+                                mainAxisAlignment:
+                                    MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Expanded(
+                                    child: Text(
+                                      'BY: ${data['user_name'] ?? 'Anonymous'}',
+                                      style: texts.copyWith(
+                                          fontSize: 12,
+                                          color: const Color(0xFFff9500)),
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    timeAgo,
+                                    style: texts.copyWith(
+                                      color: const Color(0xFF23a93b)
+                                          .withOpacity(0.5),
+                                      fontSize: 12,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 8),
+                              if (data['platforms'] != null &&
+                                  data['platforms'].isNotEmpty)
+                                Wrap(
+                                  spacing: 8,
+                                  children:
+                                      (data['platforms'] as List<dynamic>)
+                                          .map<Widget>((platform) {
+                                    return _getPlatformIcon(platform);
+                                  }).toList(),
+                                ),
+                            ],
                           ),
-                        ],
-                      ),
+                        ),
+                      ],
                     ),
                   ),
                 );
               },
             );
           },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildImage(String imageBase64) {
+    try {
+      return Image.memory(
+        base64Decode(imageBase64),
+        fit: BoxFit.cover,
+        errorBuilder: (context, error, stackTrace) {
+          return _buildErrorWidget();
+        },
+      );
+    } catch (e) {
+      return _buildErrorWidget();
+    }
+  }
+
+  Widget _buildErrorWidget() {
+    return Container(
+      color: Colors.grey[300],
+      child: const Center(
+        child: Icon(
+          Icons.image_not_supported,
+          color: Colors.grey,
         ),
       ),
     );
@@ -323,22 +338,6 @@ class PostListScreen extends StatelessWidget {
         );
       default:
         return Icon(LucideIcons.link, size: 20);
-    }
-  }
-
-  Stream<QuerySnapshot> _getPostsStream() {
-    if (selectedTab == 'prior') {
-      return FirebaseFirestore.instance
-          .collection('post_requests')
-          .where('user_id', isEqualTo: userId)
-          .orderBy('created_at', descending: true)
-          .snapshots();
-    } else {
-      // Default stream for "Today" and "Scheduled"
-      return FirebaseFirestore.instance
-          .collection('post_requests')
-          .orderBy('created_at', descending: true)
-          .snapshots();
     }
   }
 }

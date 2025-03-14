@@ -1,8 +1,11 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:seo_app/firebase_options.dart';
+import 'package:seo_app/screens/main_screen.dart';
 import 'package:seo_app/screens/profile_screen.dart';
 import 'package:seo_app/screens/signin_screen.dart';
+import 'package:seo_app/screens/splash_screen.dart';
+import 'package:seo_app/screens/auth_checker.dart';
 import 'package:seo_app/screens/dashboard_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -13,7 +16,7 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
-  runApp(MyApp());
+  runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
@@ -22,46 +25,20 @@ class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'SEO APP',
+      title: 'SEO Credit',
+      debugShowCheckedModeBanner: false,
       theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF3E1885)),
         useMaterial3: true,
       ),
-      home: AppLifecycleManager(
-        child: StreamBuilder<User?>(
-          stream: FirebaseAuth.instance.authStateChanges(),
-          builder: (context, snapshot) {
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
-            }
-
-            if (snapshot.hasData && snapshot.data != null) {
-              return FutureBuilder<DocumentSnapshot>(
-                future: FirebaseFirestore.instance
-                    .collection('profiles')
-                    .doc(snapshot.data!.uid)
-                    .get(),
-                builder: (context, profileSnapshot) {
-                  if (profileSnapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-
-                  if (profileSnapshot.hasData && profileSnapshot.data!.exists) {
-                    // Profile is complete, navigate to DashboardScreen
-                    return DashboardScreen();
-                  } else {
-                    // Profile is incomplete, navigate to ProfileScreen
-                    return ProfileScreen(userId: snapshot.data!.uid);
-                  }
-                },
-              );
-            }
-
-            // No user is signed in, navigate to SignInScreen
-            return const SignInScreen();
-          },
+      // Start with the splash screen
+      initialRoute: '/',
+      routes: {
+        '/': (context) => const SplashScreen(),
+        '/auth_checker': (context) => AppLifecycleManager(
+          child: AuthChecker(),
         ),
-      ),
+      },
     );
   }
 }

@@ -44,12 +44,15 @@ class _PostRequestScreenState extends State<PostRequestScreen> {
   String? _scheduledTimezone;
   RecurringSchedule? _recurringSchedule;
 
+  final GlobalKey<ScheduleSelectorState> _scheduleSelectorKey = GlobalKey();
+
   @override
   void initState() {
     super.initState();
     _isEditing = widget.postId != null;
 
     if (_isEditing && widget.existingData != null) {
+      print('Existing Data: ${widget.existingData}'); // Debug print
       _titleController.text = widget.existingData!['title'] ?? '';
       _descriptionController.text = widget.existingData!['description'] ?? '';
       _highlightController.text =
@@ -233,6 +236,7 @@ class _PostRequestScreenState extends State<PostRequestScreen> {
           _scheduledTimezone = null;
           _recurringSchedule = null;
         });
+        _scheduleSelectorKey.currentState?.resetFields();
       } else {
         // If editing, pop back to previous screen
         Navigator.of(context).pop();
@@ -495,6 +499,11 @@ class _PostRequestScreenState extends State<PostRequestScreen> {
 
               const SizedBox(height: 16),
               ScheduleSelector(
+                key: _scheduleSelectorKey,
+                initialDate: _scheduledDate,
+                initialTime: _scheduledTime,
+                initialTimezone: _scheduledTimezone,
+                initialRecurringSchedule: _recurringSchedule,
                 onScheduleChange: (date, time, timezone, recurring) {
                   setState(() {
                     _scheduledDate = date;

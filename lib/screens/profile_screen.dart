@@ -3,7 +3,9 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:seo_app/screens/dashboard_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:seo_app/screens/main_screen.dart';
 import 'package:seo_app/theme/text_style.dart';
+import 'package:solar_icons/solar_icons.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String userId;
@@ -173,127 +175,233 @@ class _ProfileScreenState extends State<ProfileScreen> {
         user?.displayName ?? 'U'; // Default to 'U' if name is null
     final firstLetter =
         displayName.isNotEmpty ? displayName[0] : 'U'; // Get the first letter
+    final String? photoURL = user?.photoURL;
     return Scaffold(
-      backgroundColor: Colors.grey[50],
-      body: SafeArea(
-        child: Column(
+      backgroundColor: Colors.green,
+      body: Container(
+        decoration: BoxDecoration(
+          color: Color(0xFFD3BDFC),
+        ),
+        child: Stack(
           children: [
-            // Header with profile and completion
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.grey.withOpacity(0.1),
-                    spreadRadius: 1,
-                    blurRadius: 5,
-                  ),
-                ],
-              ),
-              child: Row(
-                children: [
-                  CircleAvatar(
-                    radius: 20,
-                    backgroundColor: Colors.blue[700],
-                    child: Text(
-                      firstLetter.toUpperCase(),
-                      style: const TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
-                      ),
+            // New Header Design
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              child: Padding(
+                padding: const EdgeInsets.only(
+                  left: 20,
+                  right: 20,
+                ),
+                child: Container(
+                  height: 90,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.only(
+                      bottomLeft: Radius.circular(35),
+                      bottomRight: Radius.circular(35),
                     ),
                   ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text('Customer Profile',
-                          style: sans.copyWith(fontSize: 20)),
-                      Text(
-                          '${_completionPercentage.toStringAsFixed(0)}% Complete',
-                          style: sans.copyWith(
-                              color: Color(0xFF23a93b), fontSize: 14)),
+                      Row(
+                        children: [
+                          CircleAvatar(
+                            radius: 25,
+                            backgroundImage: photoURL != null
+                                ? NetworkImage(photoURL)
+                                : null,
+                            child: photoURL == null
+                                ? Icon(Icons.person, color: Colors.white)
+                                : null,
+                          ),
+                          const SizedBox(width: 12),
+                          Text(
+                            'Hi, ${displayName?.split(' ')[0] ?? 'User'}!',
+                            style: mont.copyWith(
+                              fontSize: 18,
+                              color: Colors.black,
+                            ),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: Icon(SolarIconsOutline.heart),
+                            onPressed: () {},
+                            color: Colors.black,
+                          ),
+                          IconButton(
+                            icon: Icon(SolarIconsOutline.settings),
+                            onPressed: () {
+                              // Navigate to ProfileScreen
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => ProfileScreen(
+                                    userId:
+                                        FirebaseAuth.instance.currentUser!.uid,
+                                  ),
+                                ),
+                              );
+                            },
+                            color: Colors.black,
+                          ),
+                        ],
+                      ),
                     ],
                   ),
-                ],
+                ),
               ),
             ),
-
-            // Custom Stepper Indicator
-            Padding(
-              padding: const EdgeInsets.only(left: 24, top: 16, bottom: 10),
-              child: CustomStepperIndicator(
-                currentStep: _currentStep,
-                totalSteps: 4,
-              ),
-            ),
-
-            // Form Content
-            Expanded(
-              child: SingleChildScrollView(
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 300),
-                  child: _buildCurrentStep(),
+            Positioned(
+              top: 70,
+              left: 0,
+              right: 0,
+              child: Padding(
+                padding: const EdgeInsets.only(top: 40),
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Color(0xFFD3BDFC),
+                    borderRadius: BorderRadius.only(
+                      bottomLeft: Radius.circular(20),
+                      bottomRight: Radius.circular(20),
+                    ),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                'Profile',
+                                style: mont.copyWith(
+                                    color: Color(0xFF3E1885),
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold),
+                              ),
+                              const SizedBox(height: 4),
+                              Text(
+                                'Complete  Profile for best experience',
+                                style: mont.copyWith(
+                                    color: Color(0xFF3E1885),
+                                    fontSize: 15,
+                                    fontWeight: FontWeight.w300),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
+                          ),
+                          IconButton(
+                            icon: Icon(
+                              Icons.info_outline,
+                              color: Color(0xFF3E1885),
+                            ),
+                            onPressed: () {},
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
 
-            // Navigation Buttons
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-              decoration: BoxDecoration(
+            // Main Content
+            Padding(
+              padding: const EdgeInsets.only(
+                  top: 180), // Adjust this padding to fit below the header
+              child: Container(
                 color: Colors.white,
-                // boxShadow: [
-                //   BoxShadow(
-                //     color: Colors.grey.withOpacity(0.1),
-                //     spreadRadius: 1,
-                //     blurRadius: 5,
-                //     offset: const Offset(0, -3),
-                //   ),
-                // ],
-              ),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  if (_currentStep > 0)
-                    OutlinedButton(
-                      onPressed: () {
-                        setState(() => _currentStep--);
-                      },
-                      style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.black, // Text Color
-                          side: const BorderSide(
-                              color: Colors.black), // Border Color
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 24, vertical: 12),
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12))),
-                      child:
-                          Text('Previous', style: sans.copyWith(fontSize: 16)),
+                child: Column(
+                  children: [
+                    // Custom Stepper Indicator
+                    Padding(
+                      padding:
+                          const EdgeInsets.only(left: 24, top: 16, bottom: 10),
+                      child: CustomStepperIndicator(
+                        currentStep: _currentStep,
+                        totalSteps: 4,
+                      ),
                     ),
-                  ElevatedButton(
-                    onPressed: () {
-                      if (_currentStep < 3) {
-                        setState(() => _currentStep++);
-                      } else {
-                        _submitForm();
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Color(0xFF5664f5), // Blue Background
-                      foregroundColor: Colors.white, // White Text
+
+                    // Form Content
+                    Expanded(
+                      child: SingleChildScrollView(
+                        child: AnimatedSwitcher(
+                          duration: const Duration(milliseconds: 300),
+                          child: _buildCurrentStep(),
+                        ),
+                      ),
+                    ),
+
+                    // Navigation Buttons
+                    Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 24, vertical: 12),
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12)),
+                          horizontal: 10, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          if (_currentStep > 0)
+                            OutlinedButton(
+                              onPressed: () {
+                                setState(() => _currentStep--);
+                              },
+                              style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.black, // Text Color
+                                  side: const BorderSide(
+                                      color: Colors.black), // Border Color
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 24, vertical: 12),
+                                  shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(12))),
+                              child: Text('Previous',
+                                  style: sans.copyWith(fontSize: 16)),
+                            ),
+                          ElevatedButton(
+                            onPressed: () {
+                              print("********");
+                              if (_currentStep < 3) {
+                                setState(() => _currentStep++);
+                              } else {
+                                print("+++++++++++");
+                                _submitForm();
+                              }
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor:
+                                  Color(0xFF5664f5), // Blue Background
+                              foregroundColor: Colors.white, // White Text
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 24, vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12)),
+                            ),
+                            child: Text(_currentStep == 3 ? 'Submit' : 'Next',
+                                style: sans.copyWith(
+                                    fontSize: 16, color: Colors.white)),
+                          ),
+                        ],
+                      ),
                     ),
-                    child: Text(_currentStep == 3 ? 'Submit' : 'Next',
-                        style:
-                            sans.copyWith(fontSize: 16, color: Colors.white)),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ],
@@ -340,8 +448,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             decoration: getInputDecoration('Business Name'),
             onChanged: (_) => _updateProgress(),
             validator: (value) {
-              if (value?.isEmpty ?? true) {
-                return 'Please enter business name';
+              if (value == null || value.isEmpty) {
+                return 'Business Name is required';
               }
               return null;
             },
@@ -351,6 +459,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
             style: sans.copyWith(fontSize: 16),
             controller: _businessTypeController,
             decoration: getInputDecoration('Type of Business'),
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Type of Business is required';
+              }
+              return null;
+            },
             onChanged: (_) => _updateProgress(),
           ),
           const SizedBox(height: 16),
@@ -358,6 +472,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
             style: sans.copyWith(fontSize: 16),
             controller: _phoneController,
             decoration: getInputDecoration('Business Phone Number'),
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'please enter Phone Number';
+              }
+              return null;
+            },
             keyboardType: TextInputType.phone,
             onChanged: (_) => _updateProgress(),
           ),
@@ -366,6 +486,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
             style: sans.copyWith(fontSize: 16),
             controller: _addressController,
             decoration: getInputDecoration('Address'),
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Enter Address please';
+              }
+              return null;
+            },
             maxLines: 2,
             onChanged: (_) => _updateProgress(),
           ),
@@ -386,12 +512,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
               });
               _updateProgress();
             },
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                print("Country is not selected");
+                return 'Please select a country';
+              }
+              return null;
+            },
           ),
           const SizedBox(height: 16),
           TextFormField(
             style: sans.copyWith(fontSize: 16),
             controller: _zipController,
             decoration: getInputDecoration('Zip Code'),
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Enter Zip Code';
+              }
+              return null;
+            },
             keyboardType: TextInputType.number,
             onChanged: (_) => _updateProgress(),
           ),
@@ -411,12 +550,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
               });
               _updateProgress();
             },
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                print("Country is not selected");
+                return 'Please select a country';
+              }
+              return null;
+            },
           ),
           const SizedBox(height: 16),
           TextFormField(
             style: sans.copyWith(fontSize: 16),
             controller: _websiteController,
             decoration: getInputDecoration('Website URL'),
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Enter WEBSITE URL';
+              }
+              return null;
+            },
             keyboardType: TextInputType.url,
             onChanged: (_) => _updateProgress(),
           ),
@@ -425,6 +577,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
             style: sans.copyWith(fontSize: 16),
             controller: _gstController,
             decoration: getInputDecoration('EIN/GST Number'),
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Enter GST Number';
+              }
+              return null;
+            },
             onChanged: (_) => _updateProgress(),
           ),
         ],
@@ -986,94 +1144,97 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _submitForm() async {
-    if (_formKey.currentState?.validate() ?? false) {
-      // Show loading indicator
-      showDialog(
-        context: context,
-        barrierDismissible: false,
-        builder: (context) => const Center(
-          child: CircularProgressIndicator(),
+    print("Submit button pressed");
+
+    // if (_formKey.currentState?.validate() ?? false) {
+    print("Form is valid. Proceeding to save data...");
+
+    // Show loading indicator
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => const Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+
+    try {
+      final data = {
+        'businessDetails': {
+          'name': _businessNameController.text,
+          'type': _businessTypeController.text,
+          'phone': _phoneController.text,
+          'address': _addressController.text,
+          'country': selectedCountry,
+          'zip': _zipController.text,
+          'timeZone': selectedTimeZone,
+          'website': _websiteController.text,
+          'gstNumber': _gstController.text,
+        },
+        'socialMedia': {
+          'facebook': _facebookController.text,
+          'instagram': _instagramController.text,
+          'googleBusiness': _googleBusinessController.text,
+          'whatsapp': _whatsappController.text,
+          'telegram': _telegramController.text,
+        },
+        'contacts': contacts
+            .map((contact) => {
+                  'name': contact.name,
+                  'email': contact.email,
+                  'isPrimary': contact.isPrimary,
+                  'receiveAlerts': contact.receiveAlerts,
+                  'emailNotifications': contact.emailNotifications,
+                })
+            .toList(),
+      };
+
+      print("Data to be saved: $data");
+
+      // Save data to Firestore
+      await FirebaseFirestore.instance
+          .collection('profiles')
+          .doc(widget.userId)
+          .set(data, SetOptions(merge: true));
+
+      print("Profile updated successfully!");
+
+      // Close loading indicator
+      Navigator.of(context).pop();
+
+      // Show success message
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Profile saved successfully!'),
+          backgroundColor: Colors.green,
+          duration: Duration(seconds: 3),
         ),
       );
 
-      try {
-        final data = {
-          'businessDetails': {
-            'name': _businessNameController.text,
-            'type': _businessTypeController.text,
-            'phone': _phoneController.text,
-            'address': _addressController.text,
-            'country': selectedCountry,
-            'zip': _zipController.text,
-            'timeZone': selectedTimeZone,
-            'website': _websiteController.text,
-            'gstNumber': _gstController.text,
-          },
-          'socialMedia': {
-            'facebook': _facebookController.text,
-            'instagram': _instagramController.text,
-            'googleBusiness': _googleBusinessController.text,
-            'whatsapp': _whatsappController.text,
-            'telegram': _telegramController.text,
-          },
-          'contacts': contacts
-              .map((contact) => {
-                    'name': contact.name,
-                    'email': contact.email,
-                    'isPrimary': contact.isPrimary,
-                    'receiveAlerts': contact.receiveAlerts,
-                    'emailNotifications': contact.emailNotifications,
-                  })
-              .toList(),
-        };
-
-        print("Data to be saved: $data"); // Debug print
-
-        // Save data to Firestore
-        await FirebaseFirestore.instance
-            .collection('profiles')
-            .doc(widget.userId)
-            .set(data, SetOptions(merge: true));
-
-        print("Profile updated successfully!");
-
-        // Close loading indicator
-        Navigator.of(context).pop();
-
-        // Show success message
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Profile saved successfully!'),
-            backgroundColor: Colors.green,
-            duration: Duration(seconds: 3),
-          ),
-        );
-
-        // Navigate to DashboardScreen
-        if (mounted) {
-          print("Navigating to DashboardScreen");
-          Navigator.of(context).pushReplacement(
-            MaterialPageRoute(
-              builder: (context) => const DashboardScreen(),
-            ),
-          );
-        }
-      } catch (e) {
-        // Close loading indicator
-        if (mounted) {
-          Navigator.of(context).pop();
-        }
-        print("Error: $e");
-
-        // Show error message
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error saving profile: $e'),
-            backgroundColor: Colors.red,
-            duration: const Duration(seconds: 3),
+      // Navigate to DashboardScreen
+      if (mounted) {
+        print("Navigating to DashboardScreen");
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (context) => const MainScreen(),
           ),
         );
       }
+    } catch (e) {
+      // Close loading indicator
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
+      print("Error: $e");
+
+      // Show error message
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error saving profile: $e'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 3),
+        ),
+      );
     }
   }
 }

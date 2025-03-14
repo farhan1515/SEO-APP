@@ -1,38 +1,55 @@
 <!DOCTYPE html>
 <html>
-<head>
-  <!--
-    If you are serving your web app in a path other than the root, change the
-    href value below to reflect the base path you are serving from.
+  <head>
+    <base href="$FLUTTER_BASE_HREF" />
 
-    The path provided below has to start and end with a slash "/" in order for
-    it to work correctly.
+    <meta charset="UTF-8" />
+    <meta content="IE=Edge" http-equiv="X-UA-Compatible" />
+    <meta name="description" content="A new Flutter project." />
 
-    For more details:
-    * https://developer.mozilla.org/en-US/docs/Web/HTML/Element/base
+    <!-- iOS meta tags & icons -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
+    <meta name="apple-mobile-web-app-title" content="seo_app" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    This is a placeholder for base href that will be replaced by the value of
-    the `--base-href` argument provided to `flutter build`.
-  -->
-  <base href="$FLUTTER_BASE_HREF">
+    <!-- Google Sign-In Client ID -->
+    <meta
+      name="google-signin-client_id"
+      content="623745717856-c8k8fjsja7gfmov1j8d8s4fhug0lal3t.apps.googleusercontent.com"
+    />
 
-  <meta charset="UTF-8">
-  <meta content="IE=Edge" http-equiv="X-UA-Compatible">
-  <meta name="description" content="A new Flutter project.">
+    <!-- Favicon -->
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <link rel="apple-touch-icon" href="icons/Icon-192.png" />
 
-  <!-- iOS meta tags & icons -->
-  <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="seo_app">
-  <link rel="apple-touch-icon" href="icons/Icon-192.png">
+    <title>seo_app</title>
+    <link rel="manifest" href="manifest.json" />
 
-  <!-- Favicon -->
-  <link rel="icon" type="image/png" href="favicon.png"/>
+    <!-- Firebase and Google Sign-In Scripts -->
+    <script src="https://www.gstatic.com/firebasejs/10.1.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.1.0/firebase-auth.js"></script>
+    <script src="https://apis.google.com/js/platform.js" async defer></script>
+  </head>
+  <body>
+    <!-- Flutter App -->
+    <script src="flutter_bootstrap.js" async></script>
+    <script src="main.dart.js"></script>
 
-  <title>seo_app</title>
-  <link rel="manifest" href="manifest.json">
-</head>
-<body>
-  <script src="flutter_bootstrap.js" async></script>
-</body>
+    <!-- Firebase Initialization -->
+    <script>
+      const firebaseConfig = {
+        apiKey: "AIzaSyB6o_n2aCihPjKeTMN25NJxfQSAdHJe6dE",
+        authDomain: "seo-app-c6c22.firebaseapp.com",
+        projectId: "seo-app-c6c22",
+        storageBucket: "seo-app-c6c22.appspot.com",
+        messagingSenderId: "623745717856",
+        appId: "1:623745717856:web:1bece994786af0f8511505",
+        measurementId: "G-VH0CZGML21",
+      };
+
+      // Initialize Firebase
+      const app = firebase.initializeApp(firebaseConfig);
+    </script>
+  </body>
 </html>
