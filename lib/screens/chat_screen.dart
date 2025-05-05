@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:seo_app/services/user_status.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 import '../widgets/image_viewer.dart';
 import 'history_screen.dart';
@@ -13,11 +15,13 @@ import 'history_screen.dart';
 class ChatScreen extends StatefulWidget {
   final String recipientId;
   final String recipientName;
+  final Map<String, dynamic>? postContext;
 
   const ChatScreen({
     Key? key,
     required this.recipientId,
     required this.recipientName,
+    this.postContext,
   }) : super(key: key);
 
   @override
@@ -105,8 +109,14 @@ class _ChatScreenState extends State<ChatScreen> {
         final bytes = await pickedFile.readAsBytes();
         if (mounted) {
           setState(() {
-            _selectedImage = File(pickedFile.path);
             _projectBase64 = base64Encode(bytes);
+            if (kIsWeb) {
+              // For web, store the image as Uint8List
+              _selectedImage = null; // No File object on web
+            } else {
+              // For mobile, store the image as File
+              _selectedImage = File(pickedFile.path);
+            }
           });
         }
       }
@@ -130,16 +140,18 @@ class _ChatScreenState extends State<ChatScreen> {
     final message = _controller.text.trim();
     final timestamp = FieldValue.serverTimestamp();
 
-    // Clear input immediately for better UX
     final localProjectBase64 = _projectBase64;
     _controller.clear();
     _clearImage();
 
     try {
-      // Batch write for atomic operations
-      final batch = _firestore.batch();
+      print('Sending message:');
+      print('User: ${FirebaseAuth.instance.currentUser?.uid}');
+      print('Chat ID: $_chatId');
+      print('Message: $message');
+      print('Image: ${localProjectBase64 != null}');
 
-      // Add message
+      final batch = _firestore.batch();
       final messageRef = _firestore
           .collection('chats')
           .doc(_chatId)
@@ -156,7 +168,6 @@ class _ChatScreenState extends State<ChatScreen> {
 
       final lastMessageText = message.isNotEmpty ? message : "Project Sent";
 
-      // Update current user's chat
       batch.set(
         _firestore
             .collection('userChats')
@@ -171,7 +182,6 @@ class _ChatScreenState extends State<ChatScreen> {
         SetOptions(merge: true),
       );
 
-      // Update recipient's chat
       batch.set(
         _firestore
             .collection('userChats')
@@ -187,7 +197,12 @@ class _ChatScreenState extends State<ChatScreen> {
       );
 
       await batch.commit();
+      print('Message sent successfully');
+      // Verify the write
+      final doc = await messageRef.get();
+      print('Message in Firestore: ${doc.exists ? doc.data() : 'Not found'}');
     } catch (e) {
+      print('Send error: $e');
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Failed to send message: $e')),
       );
@@ -196,14 +211,227 @@ class _ChatScreenState extends State<ChatScreen> {
 
   Future<void> _handleApproval(
       bool isApproved, String messageId, String senderId) async {
-    final responseMessage = isApproved
-        ? "Design is approved!  Love | Like | Claps Icons"
-        : "Sorry! Can you please comment where exactly went wrong?";
-//approve ku thumb icon decline 
-    try {
-      final batch = _firestore.batch();
+    String responseMessage;
+    String? feedback;
 
-      // Add response message
+    if (!isApproved) {
+      final feedbackController = TextEditingController();
+      feedback = await showDialog<String>(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => Dialog(
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20),
+          ),
+          elevation: 8,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: min(MediaQuery.of(context).size.width * 0.85, 400),
+            ),
+            child: Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                color: Colors.white,
+                boxShadow: [
+                  BoxShadow(
+                    color: Theme.of(context).primaryColor.withOpacity(0.2),
+                    blurRadius: 10,
+                    offset: Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  // Header
+                  Row(
+                    children: [
+                      Container(
+                        padding: EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color:
+                              Theme.of(context).primaryColor.withOpacity(0.1),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.feedback_outlined,
+                          color: Theme.of(context).primaryColor,
+                          size: 24,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          'Provide Feedback',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: 18,
+                            color: Colors.black87,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+
+                  // Content
+                  Text(
+                    'Please let us know what needs to be changed:',
+                    style: TextStyle(fontSize: 14, color: Colors.black87),
+                  ),
+                  const SizedBox(height: 12),
+                  Container(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.grey.shade200,
+                          blurRadius: 4,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: TextField(
+                      controller: feedbackController,
+                      decoration: InputDecoration(
+                        hintText: 'Your feedback helps improve the flyer...',
+                        hintStyle: TextStyle(color: Colors.grey.shade400),
+                        filled: true,
+                        fillColor: Colors.grey.shade50,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide.none,
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(16),
+                          borderSide: BorderSide(
+                            color: Theme.of(context).primaryColor,
+                            width: 1.5,
+                          ),
+                        ),
+                        contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 16,
+                          vertical: 12,
+                        ),
+                      ),
+                      maxLines: 4,
+                      style: const TextStyle(fontSize: 15),
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+
+                  // Actions
+                  Wrap(
+                    alignment: WrapAlignment.spaceAround,
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: TextButton.styleFrom(
+                          padding: EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.close_rounded,
+                              size: 18,
+                              color: Colors.grey[700],
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Cancel',
+                              style: TextStyle(
+                                color: Colors.grey[700],
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      SizedBox(
+                        width: 30,
+                      ),
+                      ElevatedButton(
+                        onPressed: () {
+                          if (feedbackController.text.trim().isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                content: Text(
+                                    'Please provide feedback before submitting'),
+                                backgroundColor: Colors.orange.shade700,
+                                behavior: SnackBarBehavior.floating,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
+                                margin: EdgeInsets.all(10),
+                              ),
+                            );
+                          } else {
+                            Navigator.pop(context, feedbackController.text);
+                          }
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Theme.of(context).primaryColor,
+                          foregroundColor: Colors.white,
+                          elevation: 0,
+                          padding: EdgeInsets.symmetric(
+                              horizontal: 16, vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              Icons.send_rounded,
+                              size: 18,
+                              color: Colors.white,
+                            ),
+                            const SizedBox(width: 8),
+                            Text(
+                              'Submit ',
+                              style: TextStyle(
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+
+      if (feedback == null || feedback.trim().isEmpty) return;
+      responseMessage = 'Declined the flyer. Feedback: $feedback';
+    } else {
+      _showApprovalAnimation(context);
+      responseMessage = 'Approved the flyer! ✅';
+    }
+
+    try {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const Center(
+          child: CircularProgressIndicator(),
+        ),
+      );
+
+      final batch = _firestore.batch();
       final responseRef = _firestore
           .collection('chats')
           .doc(_chatId)
@@ -217,26 +445,185 @@ class _ChatScreenState extends State<ChatScreen> {
         'timestamp': FieldValue.serverTimestamp(),
       });
 
-      // Update original message
       batch.update(
         _firestore
             .collection('chats')
             .doc(_chatId)
             .collection('messages')
             .doc(messageId),
-        {'approved': isApproved ? "accepted" : "declined"},
+        {'approved': isApproved ? 'accepted' : 'declined'},
       );
 
+      // Update the post if this message is related to a flyer update
+      final messageDoc = await _firestore
+          .collection('chats')
+          .doc(_chatId)
+          .collection('messages')
+          .doc(messageId)
+          .get();
+      final messageData = messageDoc.data();
+      if (messageData != null &&
+          messageData['textMessage']
+              .contains('I updated the flyer for your post')) {
+        final postTitleMatch =
+            RegExp(r'"([^"]*)"').firstMatch(messageData['textMessage']);
+        if (postTitleMatch != null) {
+          final postTitle = postTitleMatch.group(1);
+          final postQuery = await _firestore
+              .collection('post_requests')
+              .where('title', isEqualTo: postTitle)
+              .where('user_id', isEqualTo: _currentUser!.uid)
+              .limit(1)
+              .get();
+
+          if (postQuery.docs.isNotEmpty) {
+            final postId = postQuery.docs.first.id;
+            if (isApproved) {
+              batch.update(
+                _firestore.collection('post_requests').doc(postId),
+                {
+                  'flyer_base64': messageData['final_project'],
+                  'updated_flyer_base64': null,
+                  'flyer_approval_status': 'approved',
+                },
+              );
+            } else {
+              batch.update(
+                _firestore.collection('post_requests').doc(postId),
+                {
+                  'updated_flyer_base64': null,
+                  'flyer_approval_status': 'declined',
+                  'feedback': feedback,
+                },
+              );
+            }
+          }
+        }
+      }
+
       await batch.commit();
-    } catch (e) {
+
+      if (Navigator.canPop(context)) {
+        Navigator.of(context).pop();
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to process approval: $e')),
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(
+                isApproved ? Icons.check_circle : Icons.info_outline,
+                color: Colors.white,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                  child: Text(isApproved
+                      ? 'Flyer successfully approved!'
+                      : 'Feedback submitted successfully')),
+            ],
+          ),
+          backgroundColor: isApproved ? Colors.green : Colors.blue,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+    } catch (e) {
+      if (Navigator.canPop(context)) {
+        Navigator.of(context).pop();
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Row(
+            children: [
+              const Icon(Icons.error_outline, color: Colors.white),
+              const SizedBox(width: 10),
+              Expanded(child: Text('Failed to process approval: $e')),
+            ],
+          ),
+          backgroundColor: Colors.red,
+          behavior: SnackBarBehavior.floating,
+          margin: const EdgeInsets.all(16),
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
       );
     }
   }
 
+// Add this animation function to your class
+  void _showApprovalAnimation(BuildContext context) {
+    final overlayEntry = OverlayEntry(
+      builder: (context) => Positioned.fill(
+        child: Material(
+          color: Colors.black.withOpacity(0.3),
+          child: TweenAnimationBuilder<double>(
+            tween: Tween<double>(begin: 0.0, end: 1.0),
+            duration: const Duration(milliseconds: 800),
+            builder: (context, value, child) {
+              return Opacity(
+                opacity: value,
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.all(24),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.2),
+                          blurRadius: 10,
+                          offset: const Offset(0, 5),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(16),
+                          decoration: BoxDecoration(
+                            color: Colors.green[50],
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(
+                            Icons.check_circle,
+                            color: Colors.green,
+                            size: 56,
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        const Text(
+                          'Flyer Approved!',
+                          style: TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ),
+    );
+
+    Overlay.of(context).insert(overlayEntry);
+
+    Future.delayed(const Duration(milliseconds: 2500), () {
+      if (overlayEntry.mounted) {
+        overlayEntry.remove();
+      }
+    });
+  }
+
   String _generateChatId(String user1, String user2) {
-    return user1.hashCode <= user2.hashCode ? "$user1-$user2" : "$user2-$user1";
+    final ids = [user1, user2]..sort(); // Sort alphabetically
+    return '${ids[0]}-${ids[1]}';
   }
 
   @override
@@ -313,28 +700,27 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
           ],
         ),
-       actions: [
-  PopupMenuButton<String>(
-    icon: const Icon(Icons.more_vert, color: Colors.black87),
-    onSelected: (value) {
-      if (value == 'history') {
-        // Navigate to HistoryScreen
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => HistoryScreen(chatId: _chatId),
+        actions: [
+          PopupMenuButton<String>(
+            icon: const Icon(Icons.more_vert, color: Colors.black87),
+            onSelected: (value) {
+              if (value == 'history') {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => HistoryScreen(chatId: _chatId),
+                  ),
+                );
+              }
+            },
+            itemBuilder: (context) => [
+              const PopupMenuItem(
+                value: 'history',
+                child: Text('History'),
+              ),
+            ],
           ),
-        );
-      }
-    },
-    itemBuilder: (context) => [
-      const PopupMenuItem(
-        value: 'history',
-        child: Text('History'),
-      ),
-    ],
-  ),
-],
+        ],
       ),
       body: Container(
         decoration: BoxDecoration(
@@ -342,6 +728,55 @@ class _ChatScreenState extends State<ChatScreen> {
         ),
         child: Column(
           children: [
+            // Display post context if available
+            if (widget.postContext != null)
+              Container(
+                padding: const EdgeInsets.all(16),
+                color: Colors.white,
+                child: Row(
+                  children: [
+                    if (widget.postContext!['image_base64'] != null)
+                      GestureDetector(
+                        onTap: () {
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (context) => ImageViewer(
+                                imageBase64:
+                                    widget.postContext!['image_base64'],
+                                tag:
+                                    'post-context-${widget.postContext!['id']}',
+                              ),
+                            ),
+                          );
+                        },
+                        child: Hero(
+                          tag: 'post-context-${widget.postContext!['id']}',
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Image.memory(
+                              base64Decode(widget.postContext!['image_base64']),
+                              width: 50,
+                              height: 50,
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                        ),
+                      ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        'Discussing Post: ${widget.postContext!['title']}',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.black87,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             Expanded(
               child: StreamBuilder<QuerySnapshot>(
                 stream: _firestore
@@ -352,11 +787,14 @@ class _ChatScreenState extends State<ChatScreen> {
                     .limit(50)
                     .snapshots(),
                 builder: (context, snapshot) {
+                  print('Stream update for chatId: $_chatId');
+                  print('Connection state: ${snapshot.connectionState}');
+                  print('Has data: ${snapshot.hasData}');
                   if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
                   }
-
                   final messages = snapshot.data?.docs ?? [];
+                  print('Messages received: ${messages.length}');
 
                   return ListView.builder(
                     controller: _scrollController,
@@ -426,7 +864,7 @@ class _ChatScreenState extends State<ChatScreen> {
                                                 maxWidth: MediaQuery.of(context)
                                                         .size
                                                         .width *
-                                                    0.7,
+                                                    0.8,
                                                 maxHeight:
                                                     MediaQuery.of(context)
                                                             .size
@@ -447,18 +885,9 @@ class _ChatScreenState extends State<ChatScreen> {
                                           padding: const EdgeInsets.all(12),
                                           child: Row(
                                             mainAxisSize: MainAxisSize.min,
+                                            mainAxisAlignment:
+                                                MainAxisAlignment.start,
                                             children: [
-                                              _ActionButton(
-                                                onPressed: () =>
-                                                    _handleApproval(
-                                                  true,
-                                                  messages[index].id,
-                                                  senderId,
-                                                ),
-                                                text: "Approve",
-                                                color: Colors.green,
-                                              ),
-                                              const SizedBox(width: 8),
                                               _ActionButton(
                                                 onPressed: () =>
                                                     _handleApproval(
@@ -467,7 +896,20 @@ class _ChatScreenState extends State<ChatScreen> {
                                                   senderId,
                                                 ),
                                                 text: "Decline",
-                                                color: Colors.red,
+                                                color: Colors.red.shade600,
+                                                isApprove: false,
+                                              ),
+                                              const SizedBox(width: 28),
+                                              _ActionButton(
+                                                onPressed: () =>
+                                                    _handleApproval(
+                                                  true,
+                                                  messages[index].id,
+                                                  senderId,
+                                                ),
+                                                text: "Approve",
+                                                color: Colors.green.shade600,
+                                                isApprove: true,
                                               ),
                                             ],
                                           ),
@@ -475,28 +917,85 @@ class _ChatScreenState extends State<ChatScreen> {
                                       if (data['approved'] != null)
                                         Container(
                                           width: double.infinity,
-                                          padding: const EdgeInsets.all(12),
+                                          padding: const EdgeInsets.symmetric(
+                                              vertical: 12, horizontal: 16),
                                           decoration: BoxDecoration(
-                                            color: data['approved'] ==
-                                                    "accepted"
-                                                ? Colors.green.withOpacity(0.1)
-                                                : Colors.red.withOpacity(0.1),
+                                            color:
+                                                data['approved'] == "accepted"
+                                                    ? Colors.green.shade600
+                                                        .withOpacity(0.12)
+                                                    : Colors.red.shade600
+                                                        .withOpacity(0.12),
                                             borderRadius:
                                                 const BorderRadius.vertical(
                                               bottom: Radius.circular(16),
                                             ),
-                                          ),
-                                          child: Text(
-                                            data['approved'] == "accepted"
-                                                ? "✅ Project Approved"
-                                                : "❌ Project Declined",
-                                            style: TextStyle(
-                                              color:
-                                                  data['approved'] == "accepted"
-                                                      ? Colors.green
-                                                      : Colors.red,
-                                              fontWeight: FontWeight.bold,
+                                            border: Border(
+                                              left: BorderSide(
+                                                color: data['approved'] ==
+                                                        "accepted"
+                                                    ? Colors.green.shade600
+                                                        .withOpacity(0.5)
+                                                    : Colors.red.shade600
+                                                        .withOpacity(0.5),
+                                                width: 3,
+                                              ),
+                                              bottom: BorderSide(
+                                                color: data['approved'] ==
+                                                        "accepted"
+                                                    ? Colors.green.shade600
+                                                        .withOpacity(0.5)
+                                                    : Colors.red.shade600
+                                                        .withOpacity(0.5),
+                                                width: 1.5,
+                                              ),
+                                              right: BorderSide(
+                                                color: data['approved'] ==
+                                                        "accepted"
+                                                    ? Colors.green.shade600
+                                                        .withOpacity(0.5)
+                                                    : Colors.red.shade600
+                                                        .withOpacity(0.5),
+                                                width: 1.5,
+                                              ),
                                             ),
+                                          ),
+                                          child: Row(
+                                            children: [
+                                              Container(
+                                                padding: EdgeInsets.all(6),
+                                                decoration: BoxDecoration(
+                                                  color: data['approved'] ==
+                                                          "accepted"
+                                                      ? Colors.green.shade600
+                                                          .withOpacity(0.2)
+                                                      : Colors.red.shade600
+                                                          .withOpacity(0.2),
+                                                  shape: BoxShape.circle,
+                                                ),
+                                                child: Text(
+                                                  data['approved'] == "accepted"
+                                                      ? "✅"
+                                                      : "❌",
+                                                  style:
+                                                      TextStyle(fontSize: 14),
+                                                ),
+                                              ),
+                                              SizedBox(width: 12),
+                                              Text(
+                                                data['approved'] == "accepted"
+                                                    ? "Flyer Approved"
+                                                    : "Flyer Declined",
+                                                style: TextStyle(
+                                                  color: data['approved'] ==
+                                                          "accepted"
+                                                      ? Colors.green.shade700
+                                                      : Colors.red.shade700,
+                                                  fontWeight: FontWeight.bold,
+                                                  fontSize: 15,
+                                                ),
+                                              ),
+                                            ],
                                           ),
                                         ),
                                     ],
@@ -548,7 +1047,7 @@ class _ChatScreenState extends State<ChatScreen> {
               ),
             ),
             // Update the selected image preview
-            if (_selectedImage != null)
+            if (_selectedImage != null || _projectBase64 != null)
               Container(
                 margin: const EdgeInsets.all(16),
                 decoration: BoxDecoration(
@@ -569,11 +1068,17 @@ class _ChatScreenState extends State<ChatScreen> {
                         constraints: BoxConstraints(
                           maxHeight: MediaQuery.of(context).size.height * 0.4,
                         ),
-                        child: Image.file(
-                          _selectedImage!,
-                          width: double.infinity,
-                          fit: BoxFit.contain,
-                        ),
+                        child: kIsWeb
+                            ? Image.memory(
+                                base64Decode(_projectBase64!),
+                                width: double.infinity,
+                                fit: BoxFit.contain,
+                              )
+                            : Image.file(
+                                _selectedImage!,
+                                width: double.infinity,
+                                fit: BoxFit.contain,
+                              ),
                       ),
                     ),
                     Positioned(
@@ -664,11 +1169,13 @@ class _ActionButton extends StatelessWidget {
   final VoidCallback onPressed;
   final String text;
   final Color color;
+  final bool isApprove;
 
   const _ActionButton({
     required this.onPressed,
     required this.text,
     required this.color,
+    required this.isApprove,
   });
 
   @override
@@ -676,19 +1183,39 @@ class _ActionButton extends StatelessWidget {
     return ElevatedButton(
       onPressed: onPressed,
       style: ElevatedButton.styleFrom(
-        backgroundColor: color.withOpacity(0.1),
+        backgroundColor: color.withOpacity(0.15),
         foregroundColor: color,
         elevation: 0,
+        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 10),
         shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(12),
+          side: BorderSide(color: color.withOpacity(0.5), width: 1.5),
         ),
       ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: color,
-          fontWeight: FontWeight.bold,
-        ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            text,
+            style: TextStyle(
+              color: color,
+              fontWeight: FontWeight.bold,
+              fontSize: 15,
+            ),
+          ),
+          SizedBox(width: 8),
+          Container(
+            padding: EdgeInsets.all(4),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.2),
+              shape: BoxShape.circle,
+            ),
+            child: Text(
+              isApprove ? '✅' : '❌',
+              style: TextStyle(fontSize: 14),
+            ),
+          ),
+        ],
       ),
     );
   }

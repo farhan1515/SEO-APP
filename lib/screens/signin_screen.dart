@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:seo_app/screens/auth_checker.dart';
 import 'package:seo_app/theme/text_style.dart';
 
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
@@ -340,45 +341,47 @@ class _SignInScreenState extends State<SignInScreen> {
     );
   }
 
- Future<void> _signInWithGoogle(BuildContext context) async {
-  try {
-    final GoogleSignIn googleSignIn = GoogleSignIn(
-      clientId: kIsWeb ? '623745717856-c8k8fjsja7gfmov1j8d8s4fhug0lal3t.apps.googleusercontent.com' : null, // Add web client ID
-      scopes: ['email', 'profile'],
-    );
-
-    final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
-
-    if (googleUser == null) {
-      _showSnackbar(context, 'Google Sign-In canceled', Colors.orange);
-      return;
-    }
-
-    final GoogleSignInAuthentication googleAuth =
-        await googleUser.authentication;
-
-    final credential = GoogleAuthProvider.credential(
-      accessToken: googleAuth.accessToken,
-      idToken: googleAuth.idToken,
-    );
-
-    final UserCredential userCredential =
-        await FirebaseAuth.instance.signInWithCredential(credential);
-
-    if (userCredential.user != null) {
-      await UserStatusService.updateUserStatus();
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => MainScreen(),
-        ),
+  Future<void> _signInWithGoogle(BuildContext context) async {
+    try {
+      final GoogleSignIn googleSignIn = GoogleSignIn(
+        clientId: kIsWeb
+            ? '623745717856-c8k8fjsja7gfmov1j8d8s4fhug0lal3t.apps.googleusercontent.com'
+            : null, // Add web client ID
+        scopes: ['email', 'profile'],
       );
+
+      final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+
+      if (googleUser == null) {
+        _showSnackbar(context, 'Google Sign-In canceled', Colors.orange);
+        return;
+      }
+
+      final GoogleSignInAuthentication googleAuth =
+          await googleUser.authentication;
+
+      final credential = GoogleAuthProvider.credential(
+        accessToken: googleAuth.accessToken,
+        idToken: googleAuth.idToken,
+      );
+
+      final UserCredential userCredential =
+          await FirebaseAuth.instance.signInWithCredential(credential);
+
+      if (userCredential.user != null) {
+        await UserStatusService.updateUserStatus();
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => AuthChecker(),
+          ),
+        );
+      }
+    } catch (e) {
+      print('Error signing in with Google: $e');
+      _showSnackbar(context, 'Sign-In failed. Please try again!', Colors.red);
     }
-  } catch (e) {
-    print('Error signing in with Google: $e');
-    _showSnackbar(context, 'Sign-In failed. Please try again!', Colors.red);
   }
-}
 
   Future<void> _signInWithApple() async {
     try {

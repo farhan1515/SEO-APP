@@ -1,20 +1,14 @@
 import 'dart:convert';
-
 import 'package:flutter/material.dart';
-import 'package:seo_app/screens/chat_list_screen.dart';
-import 'package:seo_app/screens/chat_screen.dart';
 import 'package:seo_app/screens/post_detail_screen.dart';
-import 'package:seo_app/screens/profile_screen.dart';
 import 'package:seo_app/theme/text_style.dart';
-import 'package:seo_app/screens/post_request_screen.dart';
-import 'package:seo_app/screens/show_posts_screen.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:seo_app/widgets/show_post_list.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:seo_app/screens/signin_screen.dart'; // Update with your actual path
+import 'package:seo_app/screens/signin_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
+import 'package:seo_app/widgets/show_post_list.dart';
 
 class DashboardScreen extends StatefulWidget {
   const DashboardScreen({Key? key}) : super(key: key);
@@ -23,10 +17,15 @@ class DashboardScreen extends StatefulWidget {
   State<DashboardScreen> createState() => _DashboardScreenState();
 }
 
-class _DashboardScreenState extends State<DashboardScreen> {
+class _DashboardScreenState extends State<DashboardScreen>
+    with AutomaticKeepAliveClientMixin {
   final List<String> _selectedPlatforms = [];
-  String _selectedTab = 'today';
+  final ValueNotifier<String> _selectedTab =
+      ValueNotifier('today'); // Use ValueNotifier
   List<Map<String, dynamic>> _upcomingPosts = [];
+
+  @override
+  bool get wantKeepAlive => true; // Preserve state when switching tabs
 
   @override
   void initState() {
@@ -45,23 +44,24 @@ class _DashboardScreenState extends State<DashboardScreen> {
         .orderBy('scheduled_date')
         .get();
 
-    setState(() {
-      _upcomingPosts = postsSnapshot.docs.map((doc) => doc.data()).toList();
-    });
+    if (mounted) {
+      setState(() {
+        _upcomingPosts = postsSnapshot.docs.map((doc) => doc.data()).toList();
+      });
+    }
   }
 
   void _handleTabSelected(String tab) {
-    setState(() {
-      _selectedTab = tab;
-    });
+    _selectedTab.value = tab; // Update ValueNotifier
   }
 
   @override
   Widget build(BuildContext context) {
+    super.build(context); // Required for AutomaticKeepAliveClientMixin
     final screenWidth = MediaQuery.of(context).size.width;
 
     return Scaffold(
-      backgroundColor: Color(0xFFc9dee7),
+      backgroundColor: const Color(0xFFc9dee7),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(10.0),
@@ -97,9 +97,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           ),
                         ),
                       ),
-                      const SizedBox(
-                        width: 60,
-                      ),
+                      const SizedBox(width: 60),
                     ],
                   ),
                   PopupMenuButton<String>(
@@ -128,7 +126,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
 
               // Upcoming Posts Carousel
               SizedBox(
-                height: 200, // Adjust height as needed
+                height: 200,
                 child: StreamBuilder<QuerySnapshot>(
                   stream: FirebaseFirestore.instance
                       .collection('post_requests')
@@ -136,17 +134,14 @@ class _DashboardScreenState extends State<DashboardScreen> {
                           isGreaterThanOrEqualTo:
                               DateTime.now().toIso8601String())
                       .orderBy('scheduled_date')
-                      .snapshots(), // Firestore stream
+                      .snapshots(),
                   builder: (context, snapshot) {
                     if (snapshot.connectionState == ConnectionState.waiting) {
-                      // Show a loading indicator while data is being fetched
-                      return Center(child: CircularProgressIndicator());
+                      return const Center(child: CircularProgressIndicator());
                     } else if (snapshot.hasError) {
-                      // Show an error message if something went wrong
                       return Center(child: Text('Error: ${snapshot.error}'));
                     } else if (!snapshot.hasData ||
                         snapshot.data!.docs.isEmpty) {
-                      // Show a message if there are no posts
                       return Center(
                         child: Text(
                           'No upcoming posts',
@@ -154,7 +149,6 @@ class _DashboardScreenState extends State<DashboardScreen> {
                         ),
                       );
                     } else {
-                      // Data is available, display the posts
                       final posts = snapshot.data!.docs
                           .map((doc) => doc.data() as Map<String, dynamic>)
                           .toList();
@@ -172,82 +166,19 @@ class _DashboardScreenState extends State<DashboardScreen> {
               ),
 
               ButtonGroup(
-                onTabSelected: _handleTabSelected, // Pass callback
-              ),
-              const SizedBox(height: 10),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Expanded(
-                    flex: 1,
-                    child: _SocialMediaButton(
-                      title: 'Facebook',
-                      icon: Icon(LucideIcons.facebook, size: 20),
-                      color: const Color(0xFF1877F2),
-                      isSelected: _selectedPlatforms.contains('facebook'),
-                      onToggle: (selected) {
-                        setState(() {
-                          if (selected) {
-                            _selectedPlatforms.add('facebook');
-                          } else {
-                            _selectedPlatforms.remove('facebook');
-                          }
-                        });
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    flex: 1,
-                    child: _SocialMediaButton(
-                      title: 'Instagram',
-                      icon: Icon(LucideIcons.instagram, size: 20),
-                      color: const Color(0xFFE4405F),
-                      isSelected: _selectedPlatforms.contains('instagram'),
-                      onToggle: (selected) {
-                        setState(() {
-                          if (selected) {
-                            _selectedPlatforms.add('instagram');
-                          } else {
-                            _selectedPlatforms.remove('instagram');
-                          }
-                        });
-                      },
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    flex: 1,
-                    child: _SocialMediaButton(
-                      title: 'WhatsApp',
-                      icon: Image.asset(
-                        "assets/icons/whatsapp.png",
-                        height: 20,
-                        width: 20,
-                        fit: BoxFit.contain,
-                      ),
-                      color: const Color(0xFF25D366),
-                      isSelected: _selectedPlatforms.contains('whatsapp'),
-                      onToggle: (selected) {
-                        setState(() {
-                          if (selected) {
-                            _selectedPlatforms.add('whatsapp');
-                          } else {
-                            _selectedPlatforms.remove('whatsapp');
-                          }
-                        });
-                      },
-                    ),
-                  ),
-                ],
+                onTabSelected: _handleTabSelected,
               ),
               const SizedBox(height: 10),
 
               Expanded(
-                child: PostListScreen(
-                  selectedPlatforms: _selectedPlatforms,
-                  selectedTab: _selectedTab,
-                  userId: FirebaseAuth.instance.currentUser!.uid,
+                child: ValueListenableBuilder<String>(
+                  valueListenable: _selectedTab,
+                  builder: (context, selectedTab, child) {
+                    return PostListScreen(
+                      selectedTab: selectedTab,
+                      userId: FirebaseAuth.instance.currentUser!.uid,
+                    );
+                  },
                 ),
               ),
             ],
@@ -340,7 +271,7 @@ class _SocialMediaButton extends StatelessWidget {
 }
 
 class ButtonGroup extends StatefulWidget {
-  final Function(String) onTabSelected; // Callback function
+  final Function(String) onTabSelected;
 
   const ButtonGroup({Key? key, required this.onTabSelected}) : super(key: key);
 
@@ -350,8 +281,6 @@ class ButtonGroup extends StatefulWidget {
 
 class _ButtonGroupState extends State<ButtonGroup> {
   int selectedIndex = 0;
-
-  // Map indices to tab identifiers
   final List<String> _tabs = ['today', 'scheduled', 'prior'];
 
   @override
@@ -374,7 +303,7 @@ class _ButtonGroupState extends State<ButtonGroup> {
         setState(() {
           selectedIndex = index;
         });
-        widget.onTabSelected(_tabs[index]); // Notify parent
+        widget.onTabSelected(_tabs[index]);
       },
       child: Container(
         padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),

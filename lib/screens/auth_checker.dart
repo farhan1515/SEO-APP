@@ -6,6 +6,7 @@ import 'package:seo_app/screens/post_screen.dart';
 import 'package:seo_app/screens/main_screen.dart';
 import 'package:seo_app/screens/profile_screen.dart';
 import 'package:seo_app/screens/signin_screen.dart';
+import 'package:seo_app/screens/role_selection_screen.dart'; // Import the new screen
 
 class AuthChecker extends StatelessWidget {
   const AuthChecker({Key? key}) : super(key: key);
@@ -20,23 +21,63 @@ class AuthChecker extends StatelessWidget {
         }
 
         if (snapshot.hasData && snapshot.data != null) {
+          final userId = snapshot.data!.uid;
+
+          // First check if user has a role assigned
           return FutureBuilder<DocumentSnapshot>(
             future: FirebaseFirestore.instance
-                .collection('profiles')
-                .doc(snapshot.data!.uid)
+                .collection('roles')
+                .doc(userId)
                 .get(),
-            builder: (context, profileSnapshot) {
-              if (profileSnapshot.connectionState == ConnectionState.waiting) {
+            builder: (context, userSnapshot) {
+              if (userSnapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
               }
 
-              if (profileSnapshot.hasData && profileSnapshot.data!.exists) {
-                // Profile is complete, navigate to MainScreen
-                return MainScreen();
-              } else {
-                // Profile is incomplete, navigate to ProfileScreen
-                return ProfileScreen(userId: snapshot.data!.uid);
+              // If user document doesn't exist or doesn't have a role, send to role selection
+              if (!userSnapshot.hasData ||
+                  !userSnapshot.data!.exists ||
+                  !userSnapshot.data!.data().toString().contains('role')) {
+                return RoleSelectionScreen(userId: userId);
               }
+
+              // Get the user's role
+              final userRole = userSnapshot.data!['role'] as String;
+
+              // For non-customer roles, go directly to MainScreen
+              if (userRole != 'Customer') {
+                return MainScreen();
+              }
+
+              // For customers, check if they have a profile
+              return FutureBuilder<QuerySnapshot>(
+                future: FirebaseFirestore.instance
+                    .collection('profiles')
+                    .doc(userId)
+                    .collection('profiles')
+                    .get(),
+                builder: (context, profileSnapshot) {
+                  if (profileSnapshot.connectionState ==
+                      ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator());
+                  }
+
+                  if (profileSnapshot.hasError) {
+                    return Center(
+                        child: Text('Error: ${profileSnapshot.error}'));
+                  }
+
+                  // Check if the user has any profiles
+                  if (profileSnapshot.hasData &&
+                      profileSnapshot.data!.docs.isEmpty) {
+                    // No profiles found, navigate to ProfileScreen
+                    return ProfileScreen(userId: userId);
+                  } else {
+                    // Profiles found, navigate to MainScreen
+                    return MainScreen();
+                  }
+                },
+              );
             },
           );
         }

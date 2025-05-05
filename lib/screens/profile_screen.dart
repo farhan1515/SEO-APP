@@ -1,15 +1,22 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:seo_app/screens/add_profile_screen.dart';
 import 'package:seo_app/screens/dashboard_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:seo_app/screens/main_screen.dart';
+import 'package:seo_app/screens/settings_screen.dart';
 import 'package:seo_app/theme/text_style.dart';
 import 'package:solar_icons/solar_icons.dart';
 
 class ProfileScreen extends StatefulWidget {
   final String userId;
-  const ProfileScreen({super.key, required this.userId});
+  final String? profileId;
+  const ProfileScreen({
+    super.key,
+    required this.userId,
+    this.profileId,
+  });
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -82,6 +89,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       final doc = await FirebaseFirestore.instance
           .collection('profiles')
           .doc(widget.userId)
+          .collection('profiles')
+          .doc(widget.profileId)
           .get();
 
       if (doc.exists) {
@@ -138,7 +147,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
-    _fetchProfileData();
+    if (widget.profileId != null) {
+      _fetchProfileData();
+    }
   }
 
   @override
@@ -166,6 +177,35 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
 
     super.dispose();
+  }
+
+  void _nextStep() {
+    // Check if the current step is 0 (Business Details step)
+    if (_currentStep == 0) {
+      // Validate mandatory fields
+      if (_businessNameController.text.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Business Name is required')),
+        );
+        return; // Stop further execution
+      }
+      if (_businessTypeController.text.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Business Type is required')),
+        );
+        return; // Stop further execution
+      }
+    }
+
+    // Proceed to the next step
+    if (_currentStep < 3) {
+      setState(() {
+        _currentStep++;
+      });
+    } else {
+      // If on the last step, submit the form
+      _submitForm();
+    }
   }
 
   @override
@@ -244,11 +284,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (context) => ProfileScreen(
-                                    userId:
-                                        FirebaseAuth.instance.currentUser!.uid,
-                                  ),
-                                ),
+                                    builder: (context) => SettingScreen()),
                               );
                             },
                             color: Colors.black,
@@ -319,7 +355,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 ),
               ),
             ),
-
+            // Positioned(
+            //   bottom: 20,
+            //   right: 20,
+            //   child: FloatingActionButton(
+            //     onPressed: () {
+            //       Navigator.push(
+            //         context,
+            //         MaterialPageRoute(
+            //           builder: (context) =>
+            //               AddProfileScreen(userId: widget.userId),
+            //         ),
+            //       );
+            //     },
+            //     child: Icon(Icons.add),
+            //     backgroundColor: Color(0xFF5664f5),
+            //   ),
+            // ),
             // Main Content
             Padding(
               padding: const EdgeInsets.only(
@@ -375,15 +427,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   style: sans.copyWith(fontSize: 16)),
                             ),
                           ElevatedButton(
-                            onPressed: () {
-                              print("********");
-                              if (_currentStep < 3) {
-                                setState(() => _currentStep++);
-                              } else {
-                                print("+++++++++++");
-                                _submitForm();
-                              }
-                            },
+                            onPressed: _nextStep, // Call _nextStep here
                             style: ElevatedButton.styleFrom(
                               backgroundColor:
                                   Color(0xFF5664f5), // Blue Background
@@ -1144,96 +1188,108 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _submitForm() async {
-    print("Submit button pressed");
-
-    // if (_formKey.currentState?.validate() ?? false) {
-    print("Form is valid. Proceeding to save data...");
-
-    // Show loading indicator
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) => const Center(
-        child: CircularProgressIndicator(),
-      ),
-    );
+    final data = {
+      'businessDetails': {
+        'name': _businessNameController.text,
+        'type': _businessTypeController.text,
+        'phone': _phoneController.text,
+        'address': _addressController.text,
+        'country': selectedCountry,
+        'zip': _zipController.text,
+        'timeZone': selectedTimeZone,
+        'website': _websiteController.text,
+        'gstNumber': _gstController.text,
+      },
+      'socialMedia': {
+        'facebook': _facebookController.text,
+        'instagram': _instagramController.text,
+        'googleBusiness': _googleBusinessController.text,
+        'whatsapp': _whatsappController.text,
+        'telegram': _telegramController.text,
+      },
+      'contacts': contacts
+          .map((contact) => {
+                'name': contact.name,
+                'email': contact.email,
+                'isPrimary': contact.isPrimary,
+                'receiveAlerts': contact.receiveAlerts,
+                'emailNotifications': contact.emailNotifications,
+              })
+          .toList(),
+    };
 
     try {
-      final data = {
-        'businessDetails': {
-          'name': _businessNameController.text,
-          'type': _businessTypeController.text,
-          'phone': _phoneController.text,
-          'address': _addressController.text,
-          'country': selectedCountry,
-          'zip': _zipController.text,
-          'timeZone': selectedTimeZone,
-          'website': _websiteController.text,
-          'gstNumber': _gstController.text,
-        },
-        'socialMedia': {
-          'facebook': _facebookController.text,
-          'instagram': _instagramController.text,
-          'googleBusiness': _googleBusinessController.text,
-          'whatsapp': _whatsappController.text,
-          'telegram': _telegramController.text,
-        },
-        'contacts': contacts
-            .map((contact) => {
-                  'name': contact.name,
-                  'email': contact.email,
-                  'isPrimary': contact.isPrimary,
-                  'receiveAlerts': contact.receiveAlerts,
-                  'emailNotifications': contact.emailNotifications,
-                })
-            .toList(),
-      };
-
-      print("Data to be saved: $data");
-
-      // Save data to Firestore
-      await FirebaseFirestore.instance
-          .collection('profiles')
-          .doc(widget.userId)
-          .set(data, SetOptions(merge: true));
-
-      print("Profile updated successfully!");
-
-      // Close loading indicator
-      Navigator.of(context).pop();
+      if (widget.profileId == null) {
+        // Add a new profile
+        await FirebaseFirestore.instance
+            .collection('profiles')
+            .doc(widget.userId)
+            .collection('profiles')
+            .add(data);
+      } else {
+        // Update an existing profile
+        await FirebaseFirestore.instance
+            .collection('profiles')
+            .doc(widget.userId)
+            .collection('profiles')
+            .doc(widget.profileId)
+            .set(data, SetOptions(merge: true));
+      }
 
       // Show success message
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Profile saved successfully!'),
-          backgroundColor: Colors.green,
+        SnackBar(
+          content: Row(
+            children: [
+              Icon(
+                SolarIconsOutline.checkCircle,
+                color: Colors.white,
+                size: 20,
+              ),
+              SizedBox(width: 12),
+              Text(
+                'Profile saved successfully!',
+                style: mont.copyWith(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white,
+                ),
+              ),
+            ],
+          ),
+          behavior: SnackBarBehavior.floating,
+          backgroundColor: Color(0xFF5664F5),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
           duration: Duration(seconds: 3),
+          margin: EdgeInsets.all(16),
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          action: SnackBarAction(
+            label: 'OK',
+            textColor: Colors.white,
+            onPressed: () {
+              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+            },
+          ),
         ),
       );
 
-      // Navigate to DashboardScreen
-      if (mounted) {
-        print("Navigating to DashboardScreen");
-        Navigator.of(context).pushReplacement(
-          MaterialPageRoute(
-            builder: (context) => const MainScreen(),
-          ),
-        );
-      }
+      // Navigate to MainScreen after a short delay
+      Future.delayed(Duration(seconds: 1), () {
+        if (mounted) {
+          Navigator.pushReplacement(
+            context,
+            MaterialPageRoute(
+              builder: (context) => MainScreen(),
+            ),
+          );
+        }
+      });
     } catch (e) {
-      // Close loading indicator
-      if (mounted) {
-        Navigator.of(context).pop();
-      }
-      print("Error: $e");
-
       // Show error message
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Error saving profile: $e'),
-          backgroundColor: Colors.red,
-          duration: const Duration(seconds: 3),
-        ),
+        SnackBar(content: Text('Error saving profile: $e')),
       );
     }
   }

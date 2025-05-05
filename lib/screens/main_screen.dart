@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:seo_app/screens/dashboard_screen.dart';
 import 'package:seo_app/screens/history_screen.dart';
 import 'package:seo_app/screens/home_screen.dart';
+import 'package:seo_app/screens/pending_approval_screen.dart';
 import 'package:seo_app/screens/post_request_screen.dart';
 import 'package:seo_app/screens/chat_list_screen.dart';
 import 'package:seo_app/screens/post_screen.dart';
@@ -24,8 +25,8 @@ class _MainScreenState extends State<MainScreen> {
   final List<Widget> _screens = [
     const HomeScreen(),
     const PostScreen(),
-    const StatusScreen(),
-    ChatListScreen()
+    const PendingApprovalsScreen(),
+   const ChatListScreen()
   ];
 
   // Colors based on your specifications

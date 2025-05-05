@@ -71,6 +71,11 @@ dev_dependencies:
   universal_html: ^2.2.0 # For web-specific HTML handling
   responsive_framework: ^0.2.0
   file_picker: ^9.1.0
+  flutter_spinkit: ^5.2.1
+  http: ^1.1.0
+  path_provider: ^2.1.1
+
+  
 
   
 # For information on the generic Dart part of this file, see the

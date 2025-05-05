@@ -29,12 +29,9 @@
     <!-- Firebase and Google Sign-In Scripts -->
     <script src="https://www.gstatic.com/firebasejs/10.1.0/firebase-app.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.1.0/firebase-auth.js"></script>
-    <script src="https://apis.google.com/js/platform.js" async defer></script>
-  </head>
-  <body>
-    <!-- Flutter App -->
-    <script src="flutter_bootstrap.js" async></script>
-    <script src="main.dart.js"></script>
+
+    <!-- Google Identity Services (GIS) Library -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
 
     <!-- Firebase Initialization -->
     <script>
@@ -51,5 +48,59 @@
       // Initialize Firebase
       const app = firebase.initializeApp(firebaseConfig);
     </script>
+
+    <!-- Google Sign-In Handling -->
+    <script>
+      // Listen for authentication state changes
+      firebase.auth().onAuthStateChanged((user) => {
+        if (user) {
+          // User is signed in
+          console.log("User signed in:", user);
+        } else {
+          // User is signed out
+          console.log("User signed out");
+        }
+      });
+
+      // Handle the Google Sign-In response
+      function handleCredentialResponse(response) {
+        const credential = firebase.auth.GoogleAuthProvider.credential(response.credential);
+        firebase.auth().signInWithCredential(credential)
+          .then((result) => {
+            console.log("Google Sign-In successful:", result.user);
+          })
+          .catch((error) => {
+            console.error("Google Sign-In error:", error);
+          });
+      }
+
+      // Attach the handler to the GIS library
+      window.onload = function () {
+        google.accounts.id.initialize({
+          client_id: "623745717856-c8k8fjsja7gfmov1j8d8s4fhug0lal3t.apps.googleusercontent.com",
+          callback: handleCredentialResponse,
+        });
+      };
+    </script>
+  </head>
+  <body>
+    <!-- Google Sign-In Button -->
+    <div id="g_id_onload"
+         data-client_id="623745717856-c8k8fjsja7gfmov1j8d8s4fhug0lal3t.apps.googleusercontent.com"
+         data-login_uri="https://seo-app-c6c22.firebaseapp.com/__/auth/handler"
+         data-auto_prompt="false">
+    </div>
+    <div class="g_id_signin"
+         data-type="standard"
+         data-size="large"
+         data-theme="outline"
+         data-text="sign_in_with"
+         data-shape="rectangular"
+         data-logo_alignment="left">
+    </div>
+
+    <!-- Flutter App -->
+    <script src="flutter_bootstrap.js" async></script>
+    <script src="main.dart.js"></script>
   </body>
 </html>

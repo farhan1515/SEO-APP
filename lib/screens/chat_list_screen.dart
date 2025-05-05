@@ -5,6 +5,7 @@ import 'package:seo_app/theme/text_style.dart';
 import 'chat_screen.dart';
 import 'package:timeago/timeago.dart'
     as timeago; // Add this package to pubspec.yaml
+import 'package:solar_icons/solar_icons.dart';
 
 class ChatListScreen extends StatelessWidget {
   const ChatListScreen({Key? key}) : super(key: key);
@@ -92,10 +93,18 @@ class ChatListScreen extends StatelessWidget {
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Image.asset(
-                    'assets/images/no_messages.png', // Add this image to your assets
+                  Container(
                     height: 120,
-                    fit: BoxFit.contain,
+                    width: 120,
+                    decoration: BoxDecoration(
+                      color: Color(0xFFE0E8FF).withOpacity(0.7),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      SolarIconsOutline.chatRoundDots,
+                      size: 64,
+                      color: Color(0xFF5664F5),
+                    ),
                   ),
                   const SizedBox(height: 24),
                   Text(
@@ -105,17 +114,13 @@ class ChatListScreen extends StatelessWidget {
                       fontWeight: FontWeight.w600,
                       color: Colors.grey[800],
                     ),
-                    // style: TextStyle(
-                    //   fontSize: 20,
-                    //   fontWeight: FontWeight.w600,
-                    //   color: Colors.grey[800],
-                    // ),
                   ),
                   const SizedBox(height: 8),
                   // Text(
                   //   'Start chatting with your contacts',
-                  //   style: TextStyle(
+                  //   style: mont.copyWith(
                   //     fontSize: 16,
+                  //     fontWeight: FontWeight.w400,
                   //     color: Colors.grey[600],
                   //   ),
                   // ),
