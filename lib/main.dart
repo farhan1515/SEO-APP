@@ -1,44 +1,42 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
-import 'package:seo_app/firebase_options.dart';
-import 'package:seo_app/screens/main_screen.dart';
-import 'package:seo_app/screens/profile_screen.dart';
-import 'package:seo_app/screens/signin_screen.dart';
-import 'package:seo_app/screens/splash_screen.dart';
 import 'package:seo_app/screens/auth_checker.dart';
-import 'package:seo_app/screens/dashboard_screen.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:seo_app/services/user_status.dart';
+import 'package:seo_app/services/notification_service.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'firebase_options.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+
+  // Wait for Firebase Auth to initialize
+  await Future.delayed(const Duration(seconds: 1));
+
+  // Only initialize notifications if user is logged in
+  if (FirebaseAuth.instance.currentUser != null) {
+    await NotificationService.initialize();
+  }
+
   runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({Key? key}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'SEO Credit',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF3E1885)),
-        useMaterial3: true,
-      ),
-      // Start with the splash screen
-      initialRoute: '/',
-      routes: {
-        '/': (context) => const SplashScreen(),
-        '/auth_checker': (context) => AppLifecycleManager(
-          child: AuthChecker(),
+    return AppLifecycleManager(
+      child: MaterialApp(
+        debugShowCheckedModeBanner: false,
+        title: 'SEO App',
+        theme: ThemeData(
+          primarySwatch: Colors.blue,
         ),
-      },
+        home: const AuthChecker(),
+      ),
     );
   }
 }
@@ -59,6 +57,13 @@ class _AppLifecycleManagerState extends State<AppLifecycleManager>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+
+    // Initialize notifications when auth state changes
+    FirebaseAuth.instance.authStateChanges().listen((User? user) async {
+      if (user != null) {
+        await NotificationService.initialize();
+      }
+    });
   }
 
   @override
@@ -71,6 +76,10 @@ class _AppLifecycleManagerState extends State<AppLifecycleManager>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
       UserStatusService.updateUserStatus();
+      // Re-initialize notifications if needed when app resumes
+      if (FirebaseAuth.instance.currentUser != null) {
+        NotificationService.initialize();
+      }
     }
   }
 

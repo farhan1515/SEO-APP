@@ -8,6 +8,7 @@ import '../widgets/image_viewer.dart';
 import 'package:flutter_spinkit/flutter_spinkit.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:solar_icons/solar_icons.dart';
+import '../services/notification_service.dart';
 
 class PendingApprovalsScreen extends StatefulWidget {
   const PendingApprovalsScreen({Key? key}) : super(key: key);
@@ -101,7 +102,8 @@ class _PendingApprovalsScreenState extends State<PendingApprovalsScreen>
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(8)),
               ),
-              child: const Text('Submit Feedback'),
+              child: const Text('Submit Feedback',
+                  style: TextStyle(color: Colors.white)),
             )
           ],
         ),
@@ -156,7 +158,7 @@ class _PendingApprovalsScreenState extends State<PendingApprovalsScreen>
       // Notify the Designer via chat
       final chatId = _generateChatId(currentUser.uid, designerId);
       final messageRef = FirebaseFirestore.instance
-          .collection('chats')
+          .collection('conversations')
           .doc(chatId)
           .collection('messages')
           .doc();
@@ -168,37 +170,71 @@ class _PendingApprovalsScreenState extends State<PendingApprovalsScreen>
             ? 'I approved the flyer for the post: "$postTitle"'
             : 'I declined the flyer for the post: "$postTitle". Feedback: $feedback',
         'timestamp': FieldValue.serverTimestamp(),
+        'status': 'sent',
+        'approved': isApproved ? 'accepted' : 'declined',
+        'feedback': feedback,
       });
 
+      // Update conversation metadata
+      batch.update(
+          FirebaseFirestore.instance.collection('conversations').doc(chatId), {
+        'lastMessage': isApproved ? 'Approved flyer' : 'Declined flyer',
+        'lastMessageTime': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      // Update sender's chat metadata
       batch.set(
         FirebaseFirestore.instance
-            .collection('userChats')
+            .collection('user_conversations')
             .doc(currentUser.uid)
-            .collection('activeChats')
-            .doc(designerId),
+            .collection('chats')
+            .doc(chatId),
         {
+          'partnerId': designerId,
           'partnerName': 'Designer',
           'lastMessage': isApproved ? 'Approved flyer' : 'Declined flyer',
-          'timestamp': FieldValue.serverTimestamp(),
+          'lastMessageTime': FieldValue.serverTimestamp(),
+          'unreadCount': 0,
+          'updatedAt': FieldValue.serverTimestamp(),
         },
         SetOptions(merge: true),
       );
 
+      // Update recipient's chat metadata
       batch.set(
         FirebaseFirestore.instance
-            .collection('userChats')
+            .collection('user_conversations')
             .doc(designerId)
-            .collection('activeChats')
-            .doc(currentUser.uid),
+            .collection('chats')
+            .doc(chatId),
         {
+          'partnerId': currentUser.uid,
           'partnerName': currentUser.displayName ?? 'Unknown',
           'lastMessage': isApproved ? 'Approved flyer' : 'Declined flyer',
-          'timestamp': FieldValue.serverTimestamp(),
+          'lastMessageTime': FieldValue.serverTimestamp(),
+          'unreadCount': FieldValue.increment(1),
+          'updatedAt': FieldValue.serverTimestamp(),
         },
         SetOptions(merge: true),
       );
 
       await batch.commit();
+
+      // Send notification for the approval/decline
+      await NotificationService.sendNotification(
+        recipientId: designerId,
+        title: isApproved ? '✅ Flyer Approved' : '❌ Flyer Feedback',
+        body: isApproved
+            ? '${currentUser.displayName ?? "Someone"} approved your flyer for "$postTitle"'
+            : '${currentUser.displayName ?? "Someone"} provided feedback for "$postTitle"',
+        type: isApproved ? 'flyer_approval' : 'flyer_feedback',
+        chatId: chatId,
+        senderId: currentUser.uid,
+        senderName: currentUser.displayName ?? "Unknown",
+        postId: postId,
+        postTitle: postTitle,
+      );
 
       scaffoldMessenger.hideCurrentSnackBar();
 

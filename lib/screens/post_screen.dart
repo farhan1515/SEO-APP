@@ -25,6 +25,7 @@ import '../widgets/schedule_selector.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
+import 'package:seo_app/services/notification_service.dart';
 
 class PostScreen extends StatefulWidget {
   final Map<String, dynamic>? existingData;
@@ -378,7 +379,7 @@ class _PostScreenState extends State<PostScreen> {
 
         final batch = FirebaseFirestore.instance.batch();
         final messageRef = FirebaseFirestore.instance
-            .collection('chats')
+            .collection('conversations')
             .doc(chatId)
             .collection('messages')
             .doc();
@@ -390,51 +391,67 @@ class _PostScreenState extends State<PostScreen> {
               'I updated the flyer for your post: "$title". Please review it here OR in the Pending Approvals section.',
           'final_project': flyerBase64,
           'timestamp': FieldValue.serverTimestamp(),
+          'status': 'sent',
         });
 
+        // Update conversation metadata
+        batch.update(
+            FirebaseFirestore.instance.collection('conversations').doc(chatId),
+            {
+              'lastMessage': 'Updated flyer for post: "$title"',
+              'lastMessageTime': FieldValue.serverTimestamp(),
+              'updatedAt': FieldValue.serverTimestamp(),
+            });
+
+        // Update sender's chat metadata
         batch.set(
           FirebaseFirestore.instance
-              .collection('userChats')
+              .collection('user_conversations')
               .doc(currentUser.uid)
-              .collection('activeChats')
-              .doc(originalPosterId),
+              .collection('chats')
+              .doc(chatId),
           {
+            'partnerId': originalPosterId,
             'partnerName': originalPosterName,
             'lastMessage': 'Updated flyer for post: "$title"',
-            'timestamp': FieldValue.serverTimestamp(),
+            'lastMessageTime': FieldValue.serverTimestamp(),
+            'unreadCount': 0,
+            'updatedAt': FieldValue.serverTimestamp(),
           },
           SetOptions(merge: true),
         );
 
+        // Update recipient's chat metadata
         batch.set(
           FirebaseFirestore.instance
-              .collection('userChats')
+              .collection('user_conversations')
               .doc(originalPosterId)
-              .collection('activeChats')
-              .doc(currentUser.uid),
+              .collection('chats')
+              .doc(chatId),
           {
+            'partnerId': currentUser.uid,
             'partnerName': currentUser.displayName ?? 'Unknown',
             'lastMessage': 'Updated flyer for post: "$title"',
-            'timestamp': FieldValue.serverTimestamp(),
+            'lastMessageTime': FieldValue.serverTimestamp(),
+            'unreadCount': FieldValue.increment(1),
+            'updatedAt': FieldValue.serverTimestamp(),
           },
           SetOptions(merge: true),
         );
 
-        // Add a notification for the Customer
-        final notificationRef = FirebaseFirestore.instance
-            .collection('notifications')
-            .doc(originalPosterId)
-            .collection('user_notifications')
-            .doc();
-        batch.set(notificationRef, {
-          'type': 'flyer_update',
-          'post_id': widget.existingData!['id'],
-          'post_title': title,
-          'message':
-              'A Designer updated the flyer for your post: "$title". Please review.',
-          'timestamp': FieldValue.serverTimestamp(),
-          'read': false,
-        });
+        // Send notification for the flyer update
+        await NotificationService.sendNotification(
+          recipientId: originalPosterId,
+          title: '📢 New Flyer Update',
+          body:
+              '${currentUser.displayName ?? "A designer"} updated the flyer for your post: "$title"',
+          type: 'project',
+          chatId: chatId,
+          senderId: currentUser.uid,
+          senderName: currentUser.displayName ?? "Unknown",
+          postId: widget.existingData!['id'],
+          postTitle: title,
+        );
 
         await batch.commit();
       }

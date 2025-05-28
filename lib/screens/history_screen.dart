@@ -69,7 +69,7 @@ class _HistoryScreenState extends State<HistoryScreen>
   Widget _buildProjectList({required bool approved}) {
     return StreamBuilder<QuerySnapshot>(
       stream: FirebaseFirestore.instance
-          .collection('chats')
+          .collection('conversations')
           .doc(widget.chatId)
           .collection('messages')
           .where('approved', isEqualTo: approved ? "accepted" : "declined")

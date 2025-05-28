@@ -191,9 +191,47 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
       if (_businessTypeController.text.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Business Type is required')),
+          SnackBar(content: Text('Type of Business is required')),
         );
         return; // Stop further execution
+      }
+      if (_phoneController.text.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Business Phone Number is required')),
+        );
+        return; // Stop further execution
+      }
+    }
+
+    // Check if the current step is 2 (Contact Information step)
+    if (_currentStep == 2) {
+      // Validate contact information
+      for (var i = 0; i < contacts.length; i++) {
+        if (contacts[i].nameController.text.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text('Contact Name is required for Contact ${i + 1}')),
+          );
+          return;
+        }
+        if (contacts[i].emailController.text.isEmpty) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content:
+                    Text('Contact Email is required for Contact ${i + 1}')),
+          );
+          return;
+        }
+        // Basic email validation
+        if (!contacts[i].emailController.text.contains('@') ||
+            !contacts[i].emailController.text.contains('.')) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+                content: Text(
+                    'Please enter a valid email address for Contact ${i + 1}')),
+          );
+          return;
+        }
       }
     }
 
@@ -489,7 +527,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
           TextFormField(
             style: sans.copyWith(fontSize: 16),
             controller: _businessNameController,
-            decoration: getInputDecoration('Business Name'),
+            decoration: getInputDecoration('Business Name', isRequired: true),
             onChanged: (_) => _updateProgress(),
             validator: (value) {
               if (value == null || value.isEmpty) {
@@ -502,7 +540,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
           TextFormField(
             style: sans.copyWith(fontSize: 16),
             controller: _businessTypeController,
-            decoration: getInputDecoration('Type of Business'),
+            decoration:
+                getInputDecoration('Type of Business', isRequired: true),
             validator: (value) {
               if (value == null || value.isEmpty) {
                 return 'Type of Business is required';
@@ -515,10 +554,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
           TextFormField(
             style: sans.copyWith(fontSize: 16),
             controller: _phoneController,
-            decoration: getInputDecoration('Business Phone Number'),
+            decoration:
+                getInputDecoration('Business Phone Number', isRequired: true),
             validator: (value) {
               if (value == null || value.isEmpty) {
-                return 'please enter Phone Number';
+                return 'Business Phone Number is required';
               }
               return null;
             },
@@ -634,11 +674,25 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  InputDecoration getInputDecoration(String label) {
+  InputDecoration getInputDecoration(String label, {bool isRequired = false}) {
     return InputDecoration(
       labelText: label,
-      labelStyle: sans.copyWith(color: Colors.grey[600], fontSize: 18),
-      // labelStyle: TextStyle(color: Colors.grey[600]),
+      labelStyle: sans.copyWith(
+        color: Colors.grey[600],
+        fontSize: 18,
+      ),
+      suffixIcon: isRequired
+          ? Padding(
+              padding: const EdgeInsets.only(right: 8.0),
+              child: Text(
+                ' *',
+                style: sans.copyWith(
+                  color: Colors.red,
+                  fontSize: 18,
+                ),
+              ),
+            )
+          : null,
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(8),
         borderSide: BorderSide(color: Colors.grey[300]!),
@@ -867,12 +921,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: contact.nameController,
-                    style: sans.copyWith(
-                        fontSize: 16), // Added style for input text
+                    style: sans.copyWith(fontSize: 16),
                     decoration: InputDecoration(
                       labelText: 'Contact Name',
                       labelStyle:
                           sans.copyWith(color: Colors.grey[600], fontSize: 18),
+                      suffixIcon: Padding(
+                        padding: const EdgeInsets.only(right: 8.0),
+                        child: Text(
+                          ' *',
+                          style: sans.copyWith(
+                            color: Colors.red,
+                            fontSize: 18,
+                          ),
+                        ),
+                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                         borderSide: BorderSide(color: Colors.grey.shade300),
@@ -893,16 +956,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       contact.name = value;
                       _updateProgress();
                     },
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Contact Name is required';
+                      }
+                      return null;
+                    },
                   ),
                   const SizedBox(height: 16),
                   TextFormField(
                     controller: contact.emailController,
-                    style: sans.copyWith(
-                        fontSize: 16), // Added style for input text
+                    style: sans.copyWith(fontSize: 16),
                     decoration: InputDecoration(
                       labelText: 'Contact Email',
                       labelStyle:
                           sans.copyWith(color: Colors.grey[600], fontSize: 18),
+                      suffixIcon: Padding(
+                        padding: const EdgeInsets.only(right: 8.0),
+                        child: Text(
+                          ' *',
+                          style: sans.copyWith(
+                            color: Colors.red,
+                            fontSize: 18,
+                          ),
+                        ),
+                      ),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
                         borderSide: BorderSide(color: Colors.grey.shade300),
@@ -922,6 +1000,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     onChanged: (value) {
                       contact.email = value;
                       _updateProgress();
+                    },
+                    validator: (value) {
+                      if (value == null || value.isEmpty) {
+                        return 'Contact Email is required';
+                      }
+                      // Basic email validation
+                      if (!value.contains('@') || !value.contains('.')) {
+                        return 'Please enter a valid email address';
+                      }
+                      return null;
                     },
                   ),
                   const SizedBox(height: 16),
@@ -1237,6 +1325,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
       }
 
       // Show success message
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Row(
@@ -1269,6 +1358,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             label: 'OK',
             textColor: Colors.white,
             onPressed: () {
+              if (!mounted) return;
               ScaffoldMessenger.of(context).hideCurrentSnackBar();
             },
           ),
@@ -1277,17 +1367,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
       // Navigate to MainScreen after a short delay
       Future.delayed(Duration(seconds: 1), () {
-        if (mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => MainScreen(),
-            ),
-          );
-        }
+        if (!mounted) return;
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => MainScreen(),
+          ),
+        );
       });
     } catch (e) {
       // Show error message
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Error saving profile: $e')),
       );

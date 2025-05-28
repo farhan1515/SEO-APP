@@ -27,7 +27,7 @@ class _HomeScreenState extends State<HomeScreen>
       ValueNotifier<List<Map<String, dynamic>>>([]);
   final ValueNotifier<int> _currentCarouselIndexNotifier =
       ValueNotifier<int>(0);
-  final ValueNotifier<String> _selectedTab = ValueNotifier('today');
+  final ValueNotifier<String> _selectedTab = ValueNotifier('scheduled');
   final ValueNotifier<Map<String, dynamic>> _filtersNotifier =
       ValueNotifier<Map<String, dynamic>>({});
   final ValueNotifier<bool> _isLoading = ValueNotifier<bool>(true);
@@ -611,7 +611,7 @@ class ButtonGroup extends StatefulWidget {
 }
 
 class _ButtonGroupState extends State<ButtonGroup> {
-  int selectedIndex = 0;
+  int selectedIndex = 1;
   final List<String> _tabs = ['today', 'scheduled', 'prior'];
 
   @override

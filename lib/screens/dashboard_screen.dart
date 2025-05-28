@@ -21,7 +21,7 @@ class _DashboardScreenState extends State<DashboardScreen>
     with AutomaticKeepAliveClientMixin {
   final List<String> _selectedPlatforms = [];
   final ValueNotifier<String> _selectedTab =
-      ValueNotifier('today'); // Use ValueNotifier
+      ValueNotifier('scheduled'); // Changed from 'today' to 'scheduled'
   List<Map<String, dynamic>> _upcomingPosts = [];
 
   @override
@@ -280,7 +280,7 @@ class ButtonGroup extends StatefulWidget {
 }
 
 class _ButtonGroupState extends State<ButtonGroup> {
-  int selectedIndex = 0;
+  int selectedIndex = 1;
   final List<String> _tabs = ['today', 'scheduled', 'prior'];
 
   @override

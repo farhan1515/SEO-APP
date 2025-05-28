@@ -25,11 +25,13 @@ class PostDetailScreen extends StatelessWidget {
   }) : super(key: key);
 
   void _handleChatNavigation(BuildContext context) {
-    final recipientId = post['user_id']?.toString();
-    final recipientName = post['user_name']?.toString();
+    // Get the correct recipient ID and name from the post data
+    final recipientId = post['user_id']?.toString() ?? '';
+    final recipientName = post['user_name']?.toString() ?? '';
 
-    print('Recipient ID: $recipientId');
-    print('Recipient Name: $recipientName');
+    print('🔔 [DEBUG] Initiating chat with:');
+    print('🔔 [DEBUG] Recipient ID from post: $recipientId');
+    print('🔔 [DEBUG] Recipient Name from post: $recipientName');
 
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) {
@@ -52,32 +54,152 @@ class PostDetailScreen extends StatelessWidget {
       return;
     }
 
-    if (recipientId != null &&
-        recipientId.isNotEmpty &&
-        recipientName != null &&
-        recipientName.isNotEmpty) {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => ChatScreen(
-            recipientId: recipientId,
-            recipientName: recipientName,
-            postContext: {
-              'id': post['id'],
-              'title': post['title'],
-              'image_base64': post['image_base64'],
-            },
-          ),
-        ),
-      );
-    } else {
+    if (recipientId.isEmpty || recipientName.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Unable to initiate chat. User details are missing.'),
           backgroundColor: Colors.red,
         ),
       );
+      return;
     }
+
+    // First verify the recipient exists in users collection
+    FirebaseFirestore.instance
+        .collection('users')
+        .doc(recipientId)
+        .get()
+        .then((userDoc) async {
+      if (!userDoc.exists) {
+        print('❌ [DEBUG] Recipient user document not found: $recipientId');
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Unable to find the recipient user.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
+
+      // Ensure chat document exists before navigating
+      final chatId = _generateChatId(currentUser.uid, recipientId);
+      print('🔔 [DEBUG] Generated chat ID: $chatId');
+
+      try {
+        final chatDoc = await FirebaseFirestore.instance
+            .collection('conversations')
+            .doc(chatId)
+            .get();
+
+        if (!chatDoc.exists) {
+          print('🔔 [DEBUG] Creating new chat document');
+          // Create new chat document
+          final batch = FirebaseFirestore.instance.batch();
+
+          // Create conversation document
+          batch.set(
+              FirebaseFirestore.instance
+                  .collection('conversations')
+                  .doc(chatId),
+              {
+                'participants': [currentUser.uid, recipientId],
+                'createdAt': FieldValue.serverTimestamp(),
+                'updatedAt': FieldValue.serverTimestamp(),
+                'lastMessage': null,
+                'lastMessageTime': null,
+                'lastActive': {
+                  currentUser.uid: FieldValue.serverTimestamp(),
+                  recipientId: FieldValue.serverTimestamp(),
+                },
+              });
+
+          // Create chat metadata for both users
+          batch.set(
+            FirebaseFirestore.instance
+                .collection('user_conversations')
+                .doc(currentUser.uid)
+                .collection('chats')
+                .doc(chatId),
+            {
+              'partnerId': recipientId,
+              'partnerName': recipientName,
+              'lastMessage': null,
+              'lastMessageTime': null,
+              'unreadCount': 0,
+              'updatedAt': FieldValue.serverTimestamp(),
+              'lastActive': FieldValue.serverTimestamp(),
+            },
+          );
+
+          batch.set(
+            FirebaseFirestore.instance
+                .collection('user_conversations')
+                .doc(recipientId)
+                .collection('chats')
+                .doc(chatId),
+            {
+              'partnerId': currentUser.uid,
+              'partnerName': currentUser.displayName ?? 'Unknown',
+              'lastMessage': null,
+              'lastMessageTime': null,
+              'unreadCount': 0,
+              'updatedAt': FieldValue.serverTimestamp(),
+              'lastActive': FieldValue.serverTimestamp(),
+            },
+          );
+
+          await batch.commit();
+          print('✅ [DEBUG] Chat document created successfully');
+        }
+
+        // Update last active timestamp for current user
+        await FirebaseFirestore.instance
+            .collection('conversations')
+            .doc(chatId)
+            .update({
+          'lastActive.${currentUser.uid}': FieldValue.serverTimestamp(),
+        });
+
+        // Navigate to chat screen
+        if (context.mounted) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => ChatScreen(
+                recipientId: recipientId,
+                recipientName: recipientName,
+                postContext: {
+                  'id': post['id'],
+                  'title': post['title'],
+                  'image_base64': post['image_base64'],
+                },
+              ),
+            ),
+          );
+        }
+      } catch (error) {
+        print('❌ [DEBUG] Error initiating chat: $error');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error initiating chat: $error'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }).catchError((error) {
+      print('❌ [DEBUG] Error checking recipient user: $error');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Error checking recipient user: $error'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    });
+  }
+
+  String _generateChatId(String user1, String user2) {
+    final ids = [user1, user2]..sort();
+    return '${ids[0]}-${ids[1]}';
   }
 
   void _navigateToEditScreen(BuildContext context) {
@@ -607,8 +729,6 @@ class PostDetailScreen extends StatelessWidget {
                                   ],
                                 ),
 
-                             
-
                               Padding(
                                 padding: const EdgeInsets.all(24),
                                 child: Column(
@@ -958,7 +1078,7 @@ class PostDetailScreen extends StatelessWidget {
                                           ],
                                         ),
                                       ),
-                                   
+
                                     // Scheduled Date and Time
                                     _SectionTitle('Scheduled Date & Time'),
                                     const SizedBox(height: 12),

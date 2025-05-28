@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:seo_app/services/user_status.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:seo_app/services/notification_service.dart';
 
 import '../widgets/image_viewer.dart';
 import 'history_screen.dart';
@@ -146,14 +147,14 @@ class _ChatScreenState extends State<ChatScreen> {
 
     try {
       print('Sending message:');
-      print('User: ${FirebaseAuth.instance.currentUser?.uid}');
+      print('User: [32m[1m[4m${FirebaseAuth.instance.currentUser?.uid}[0m');
       print('Chat ID: $_chatId');
       print('Message: $message');
       print('Image: ${localProjectBase64 != null}');
 
       final batch = _firestore.batch();
       final messageRef = _firestore
-          .collection('chats')
+          .collection('conversations')
           .doc(_chatId)
           .collection('messages')
           .doc();
@@ -164,34 +165,55 @@ class _ChatScreenState extends State<ChatScreen> {
         'textMessage': message.isNotEmpty ? message : "",
         'final_project': localProjectBase64,
         'timestamp': timestamp,
+        'status': 'sent',
       });
 
       final lastMessageText = message.isNotEmpty ? message : "Project Sent";
 
+      // Update conversation metadata
+      batch.update(_firestore.collection('conversations').doc(_chatId), {
+        'lastMessage': lastMessageText,
+        'lastMessageTime': timestamp,
+        'updatedAt': timestamp,
+        'lastActive': {
+          _currentUser!.uid: FieldValue.serverTimestamp(),
+        },
+      });
+
+      // Update sender's chat metadata
       batch.set(
         _firestore
-            .collection('userChats')
+            .collection('user_conversations')
             .doc(_currentUser!.uid)
-            .collection('activeChats')
-            .doc(widget.recipientId),
+            .collection('chats')
+            .doc(_chatId),
         {
+          'partnerId': widget.recipientId,
           'partnerName': widget.recipientName,
           'lastMessage': lastMessageText,
-          'timestamp': timestamp,
+          'lastMessageTime': timestamp,
+          'updatedAt': timestamp,
+          'unreadCount': 0,
+          'lastActive': FieldValue.serverTimestamp(),
         },
         SetOptions(merge: true),
       );
 
+      // Update recipient's chat metadata
       batch.set(
         _firestore
-            .collection('userChats')
+            .collection('user_conversations')
             .doc(widget.recipientId)
-            .collection('activeChats')
-            .doc(_currentUser!.uid),
+            .collection('chats')
+            .doc(_chatId),
         {
+          'partnerId': _currentUser!.uid,
           'partnerName': _currentUser!.displayName ?? "Unknown",
           'lastMessage': lastMessageText,
-          'timestamp': timestamp,
+          'lastMessageTime': timestamp,
+          'updatedAt': timestamp,
+          'unreadCount': FieldValue.increment(1),
+          'lastActive': FieldValue.serverTimestamp(),
         },
         SetOptions(merge: true),
       );
@@ -201,6 +223,17 @@ class _ChatScreenState extends State<ChatScreen> {
       // Verify the write
       final doc = await messageRef.get();
       print('Message in Firestore: ${doc.exists ? doc.data() : 'Not found'}');
+
+      // Send notification for normal chat message
+      await NotificationService.sendNotification(
+        recipientId: widget.recipientId,
+        title: _currentUser!.displayName ?? 'New Message',
+        body: message.isNotEmpty ? message : 'Sent a flyer',
+        type: 'chat',
+        chatId: _chatId,
+        senderId: _currentUser!.uid,
+        senderName: _currentUser!.displayName ?? 'Unknown',
+      );
     } catch (e) {
       print('Send error: $e');
       ScaffoldMessenger.of(context).showSnackBar(
@@ -433,7 +466,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
       final batch = _firestore.batch();
       final responseRef = _firestore
-          .collection('chats')
+          .collection('conversations')
           .doc(_chatId)
           .collection('messages')
           .doc();
@@ -447,7 +480,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
       batch.update(
         _firestore
-            .collection('chats')
+            .collection('conversations')
             .doc(_chatId)
             .collection('messages')
             .doc(messageId),
@@ -456,7 +489,7 @@ class _ChatScreenState extends State<ChatScreen> {
 
       // Update the post if this message is related to a flyer update
       final messageDoc = await _firestore
-          .collection('chats')
+          .collection('conversations')
           .doc(_chatId)
           .collection('messages')
           .doc(messageId)
@@ -502,6 +535,19 @@ class _ChatScreenState extends State<ChatScreen> {
       }
 
       await batch.commit();
+
+      // Send notification for flyer approval/decline
+      await NotificationService.sendNotification(
+        recipientId: senderId,
+        title: isApproved ? '✅ Flyer Approved' : '❌ Flyer Feedback',
+        body: isApproved
+            ? '${_currentUser!.displayName ?? "Someone"} approved your flyer!'
+            : '${_currentUser!.displayName ?? "Someone"} provided feedback: $feedback',
+        type: isApproved ? 'flyer_approval' : 'flyer_feedback',
+        chatId: _chatId,
+        senderId: _currentUser!.uid,
+        senderName: _currentUser!.displayName ?? 'Unknown',
+      );
 
       if (Navigator.canPop(context)) {
         Navigator.of(context).pop();
@@ -780,7 +826,7 @@ class _ChatScreenState extends State<ChatScreen> {
             Expanded(
               child: StreamBuilder<QuerySnapshot>(
                 stream: _firestore
-                    .collection('chats')
+                    .collection('conversations')
                     .doc(_chatId)
                     .collection('messages')
                     .orderBy('timestamp', descending: true)

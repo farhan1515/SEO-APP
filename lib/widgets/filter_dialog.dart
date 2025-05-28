@@ -20,11 +20,11 @@ class _FilterDialogState extends State<FilterDialog> {
   String? _selectedProfile;
   String _searchText = '';
   DateTime? _selectedDate;
-  
+
   @override
   Widget build(BuildContext context) {
     final uniqueProfileNames = widget.allProfileNames.toSet().toList();
-    
+
     return Dialog(
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
@@ -71,7 +71,7 @@ class _FilterDialogState extends State<FilterDialog> {
             ),
             Divider(color: Colors.grey.shade300, thickness: 1),
             SizedBox(height: 16),
-            
+
             // Filter Type Selector
             Container(
               decoration: BoxDecoration(
@@ -96,9 +96,11 @@ class _FilterDialogState extends State<FilterDialog> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                     children: [
-                      _buildFilterOption('Profile', 'profile_name', Icons.person_outline),
+                      _buildFilterOption(
+                          'Profile', 'profile_name', Icons.person_outline),
                       _buildFilterOption('Title', 'title', Icons.title),
-                      _buildFilterOption('Date', 'scheduled_date', Icons.calendar_today),
+                      _buildFilterOption(
+                          'Date', 'scheduled_date', Icons.calendar_today),
                     ],
                   ),
                   SizedBox(height: 12),
@@ -106,15 +108,15 @@ class _FilterDialogState extends State<FilterDialog> {
               ),
             ),
             SizedBox(height: 24),
-            
+
             // Filter Content
             AnimatedSwitcher(
               duration: Duration(milliseconds: 300),
               child: _buildFilterContent(uniqueProfileNames),
             ),
-            
+
             SizedBox(height: 24),
-            
+
             // Action Buttons
             Row(
               mainAxisAlignment: MainAxisAlignment.end,
@@ -155,7 +157,7 @@ class _FilterDialogState extends State<FilterDialog> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.check, size: 18),
+                      Icon(Icons.check, size: 18, color: Colors.white),
                       SizedBox(width: 8),
                       Text(
                         'Apply Filters',
@@ -175,10 +177,10 @@ class _FilterDialogState extends State<FilterDialog> {
       ),
     );
   }
-  
+
   Widget _buildFilterOption(String label, String value, IconData icon) {
     final isSelected = _selectedFilterType == value;
-    
+
     return InkWell(
       onTap: () {
         setState(() {
@@ -192,17 +194,19 @@ class _FilterDialogState extends State<FilterDialog> {
       child: Container(
         padding: EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
-          color: isSelected ? Color(0xFF3E1885).withOpacity(0.1) : Colors.transparent,
+          color: isSelected
+              ? Color(0xFF3E1885).withOpacity(0.1)
+              : Colors.transparent,
           borderRadius: BorderRadius.circular(8),
-          border: isSelected 
-            ? Border.all(color: Color(0xFF3E1885), width: 1.5) 
-            : Border.all(color: Colors.transparent),
+          border: isSelected
+              ? Border.all(color: Color(0xFF3E1885), width: 1.5)
+              : Border.all(color: Colors.transparent),
         ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              icon, 
+              icon,
               color: isSelected ? Color(0xFF3E1885) : Colors.grey.shade600,
               size: 24,
             ),
@@ -220,9 +224,9 @@ class _FilterDialogState extends State<FilterDialog> {
       ),
     );
   }
-  
+
   Widget _buildFilterContent(List<String> uniqueProfileNames) {
-    switch(_selectedFilterType) {
+    switch (_selectedFilterType) {
       case 'profile_name':
         return Container(
           decoration: BoxDecoration(
@@ -247,7 +251,8 @@ class _FilterDialogState extends State<FilterDialog> {
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide.none,
               ),
-              contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              contentPadding:
+                  EdgeInsets.symmetric(horizontal: 16, vertical: 16),
               filled: true,
               fillColor: Colors.white,
               prefixIcon: Icon(Icons.person, color: Color(0xFF3E1885)),
@@ -257,7 +262,8 @@ class _FilterDialogState extends State<FilterDialog> {
             borderRadius: BorderRadius.circular(12),
             isExpanded: true,
             hint: Text('Choose a profile'),
-            items: uniqueProfileNames.map<DropdownMenuItem<String>>((String profile) {
+            items: uniqueProfileNames
+                .map<DropdownMenuItem<String>>((String profile) {
               return DropdownMenuItem<String>(
                 value: profile,
                 child: Text(
@@ -299,7 +305,8 @@ class _FilterDialogState extends State<FilterDialog> {
                 borderRadius: BorderRadius.circular(12),
                 borderSide: BorderSide.none,
               ),
-              contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              contentPadding:
+                  EdgeInsets.symmetric(horizontal: 16, vertical: 16),
               filled: true,
               fillColor: Colors.white,
               hintText: 'Enter post title keywords',
@@ -334,7 +341,9 @@ class _FilterDialogState extends State<FilterDialog> {
                   ? 'Select a date'
                   : '${_selectedDate!.toLocal().toString().split(' ')[0]}',
               style: mont.copyWith(
-                color: _selectedDate == null ? Colors.grey.shade600 : Colors.black87,
+                color: _selectedDate == null
+                    ? Colors.grey.shade600
+                    : Colors.black87,
                 fontSize: 16,
               ),
             ),

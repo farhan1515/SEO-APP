@@ -11,6 +11,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:seo_app/screens/status_screen.dart';
 import 'package:seo_app/theme/text_style.dart';
 import 'package:solar_icons/solar_icons.dart'; // You may need to add this package
+import 'package:seo_app/services/notification_service.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({Key? key}) : super(key: key);
@@ -21,19 +22,45 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
+  bool _notificationsInitialized = false;
 
   final List<Widget> _screens = [
     const HomeScreen(),
     const PostScreen(),
     const PendingApprovalsScreen(),
-   const ChatListScreen()
+    const ChatListScreen()
   ];
 
   // Colors based on your specifications
   final Color selectedColor = const Color(0xFF3E1885);
   final Color unselectedColor = const Color(0xFF999999);
-  final Color selectedBgColor =
-      const Color(0x263E1885); // rgba(62, 24, 133, 0.15)
+  final Color selectedBgColor = const Color(0x263E1885);
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeNotifications();
+  }
+
+  void _initializeNotifications() async {
+    if (!_notificationsInitialized &&
+        FirebaseAuth.instance.currentUser != null) {
+      print('🔔 [DEBUG] Initializing notifications in MainScreen');
+      await NotificationService.initialize();
+      if (mounted) {
+        setState(() {
+          _notificationsInitialized = true;
+        });
+      }
+    }
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // Re-check notification initialization when dependencies change
+    _initializeNotifications();
+  }
 
   @override
   Widget build(BuildContext context) {

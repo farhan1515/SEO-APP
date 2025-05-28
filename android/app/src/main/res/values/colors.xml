@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Define your notification color here -->
+    <color name="notification_color">#4B6BFB</color>
+</resources>
