@@ -26,6 +26,8 @@ import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
 import 'package:seo_app/services/notification_service.dart';
+import 'package:seo_app/services/twilio_service.dart';
+import 'package:http/http.dart' as http;
 
 class PostScreen extends StatefulWidget {
   final Map<String, dynamic>? existingData;
@@ -242,6 +244,20 @@ class _PostScreenState extends State<PostScreen> {
     }
   }
 
+  Future<String?> _uploadFlyerToStorage(
+      Uint8List flyerBytes, String postId) async {
+    try {
+      final ref =
+          FirebaseStorage.instance.ref().child('flyers').child('$postId.jpg');
+      await ref.putData(
+          flyerBytes, SettableMetadata(contentType: 'image/jpeg'));
+      return await ref.getDownloadURL();
+    } catch (e) {
+      print('Error uploading flyer to storage: $e');
+      return null;
+    }
+  }
+
   Future<void> _submitData() async {
     final title = _titleController.text.trim();
     final description = _descriptionController.text.trim();
@@ -279,8 +295,16 @@ class _PostScreenState extends State<PostScreen> {
       }
 
       String? flyerBase64;
+      String? flyerStorageUrl;
+      String postId = widget.existingData?['id'] ??
+          DateTime.now().millisecondsSinceEpoch.toString();
       if (_isDesignerOrManager && _selectedFlyerImageBytes != null) {
         flyerBase64 = await _convertImageToBase64(_selectedFlyerImageBytes!);
+        flyerStorageUrl =
+            await _uploadFlyerToStorage(_selectedFlyerImageBytes!, postId);
+      } else if (widget.existingData != null) {
+        flyerBase64 = widget.existingData!['flyer_base64'];
+        flyerStorageUrl = widget.existingData!['flyer_storage_url'];
       }
 
       final postData = {
@@ -308,6 +332,7 @@ class _PostScreenState extends State<PostScreen> {
         'scheduled_timezone': _scheduledTimezone,
         'recurring_schedule': _recurringSchedule?.toJson(),
         'reference_link': _referenceLinkController.text.trim(),
+        'image_base64': imageBase64,
       };
 
       // Check if this is an edit and if the flyer has changed
@@ -343,26 +368,28 @@ class _PostScreenState extends State<PostScreen> {
         if (isDesignerEditingCustomerPost && flyerChanged) {
           // Designer is editing a Customer's post and the flyer changed
           postData['updated_flyer_base64'] = flyerBase64;
+          postData['updated_flyer_storage_url'] = flyerStorageUrl;
           postData['flyer_approval_status'] = 'pending';
           postData['last_updated_by'] = currentUser!.uid;
         } else {
           // Either not a Designer editing a Customer's post, or flyer didn't change
           postData['flyer_base64'] = flyerBase64;
+          postData['flyer_storage_url'] = flyerStorageUrl;
           postData['updated_flyer_base64'] = null;
+          postData['updated_flyer_storage_url'] = null;
           postData['flyer_approval_status'] = null;
         }
-
-        // Always update image_base64 regardless of role
-        postData['image_base64'] = imageBase64;
-
         await FirebaseFirestore.instance
             .collection('post_requests')
             .doc(widget.existingData!['id'])
             .update(postData);
       } else {
         // Create new post
-        postData['image_base64'] = imageBase64;
         postData['flyer_base64'] = flyerBase64;
+        postData['flyer_storage_url'] = flyerStorageUrl;
+        postData['updated_flyer_base64'] = null;
+        postData['updated_flyer_storage_url'] = null;
+        postData['flyer_approval_status'] = null;
         await FirebaseFirestore.instance
             .collection('post_requests')
             .add(postData);
@@ -453,18 +480,51 @@ class _PostScreenState extends State<PostScreen> {
           postTitle: title,
         );
 
+        // Send WhatsApp message via Twilio with the flyer image using the storage URL
+        // TODO: Replace with your actual credentials securely (e.g., from environment variables)
+        const accountSid = String.fromEnvironment('TWILIO_ACCOUNT_SID', defaultValue: 'YOUR_SID_HERE');
+        const authToken = String.fromEnvironment('TWILIO_AUTH_TOKEN', defaultValue: 'YOUR_TOKEN_HERE');
+        const fromNumber = String.fromEnvironment('TWILIO_FROM_NUMBER', defaultValue: 'whatsapp:+14155238886');
+
+        final twilio = TwilioService(
+          accountSid: accountSid,
+          authToken: authToken,
+          fromNumber: fromNumber,
+        );
+        try {
+          await twilio.sendWhatsAppMessageWithImageUrl(
+            '+919014263260',
+            'I updated the flyer for your post: "$title". Please review it here OR in the Pending Approvals section.',
+            flyerStorageUrl,
+          );
+        } catch (e) {
+          print('Failed to send WhatsApp message with flyer: $e');
+          // Fallback: try sending just the text message
+          try {
+            await twilio.sendWhatsAppMessage(
+              '+919014263260',
+              'I updated the flyer for your post: "$title". Please review it here OR in the Pending Approvals section. (Image could not be attached)',
+            );
+          } catch (fallbackError) {
+            print('Failed to send fallback WhatsApp message: $fallbackError');
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Post updated but WhatsApp notification failed'),
+                backgroundColor: Colors.orange,
+              ),
+            );
+          }
+        }
         await batch.commit();
       }
 
       Navigator.of(context, rootNavigator: true).pop();
-
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
           builder: (context) => MainScreen(),
         ),
       );
-
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
@@ -481,7 +541,7 @@ class _PostScreenState extends State<PostScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Submission failed: ${e.toString()}',
+            'Submission failed: [32m${e.toString()}[0m',
             style: const TextStyle(color: Colors.white),
           ),
           backgroundColor: Colors.red,

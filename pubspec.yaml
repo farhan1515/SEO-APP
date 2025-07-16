@@ -1,8 +1,8 @@
 name: seo_app
-description: "A new Flutter project."
-publish_to: 'none'
+description: "SEO Credit"
+publish_to: "none"
 
-version: 1.0.0+1
+version: 1.0.0+5
 
 environment:
   sdk: ^3.7.0-41.0.dev
@@ -15,15 +15,15 @@ dependencies:
   firebase_auth: ^5.4.0
   cloud_firestore: ^5.6.7
   google_sign_in: ^6.2.2
-  sign_in_with_apple: ^6.1.4
+
   google_fonts: ^6.2.1
   firebase_storage: ^12.4.0
   image_picker: ^1.1.2
   timeago: ^3.7.0
   lucide_icons_flutter: ^1.2.6
   cached_network_image: ^3.4.1
- 
-  saver_gallery: ^4.0.1
+
+  gal: ^2.3.1
   permission_handler: ^11.3.1
   palette_generator: ^0.3.3
   intl: ^0.19.0
@@ -31,7 +31,7 @@ dependencies:
   timezone: ^0.10.1
   curved_navigation_bar: ^1.0.6
   carousel_slider: ^5.0.0
-  solar_icons: ^0.0.5 
+  solar_icons: ^0.0.5
   dotted_border: ^2.1.0
   universal_html: ^2.2.0
   responsive_framework: ^0.2.0

@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:palette_generator/palette_generator.dart';
-import 'package:saver_gallery/saver_gallery.dart';
+import 'package:gal/gal.dart';
 
 class ImageViewer extends StatefulWidget {
   final String imageBase64;
@@ -57,12 +57,36 @@ class _ImageViewerState extends State<ImageViewer> {
 
   Future<void> _downloadImage(BuildContext context) async {
     try {
+      // Check if we have permission to save to gallery
+      final hasAccess = await Gal.hasAccess();
+      if (!hasAccess) {
+        final hasPermission = await Gal.requestAccess();
+        if (!hasPermission) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                'Permission denied to access gallery',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              backgroundColor: Colors.red.shade600,
+              behavior: SnackBarBehavior.floating,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              margin: const EdgeInsets.all(16),
+            ),
+          );
+          return;
+        }
+      }
+
       final bytes = base64Decode(widget.imageBase64);
-      await SaverGallery.saveImage(
-        Uint8List.fromList(bytes),
-        quality: 100,
-        fileName: "project_${DateTime.now().millisecondsSinceEpoch}",
-        skipIfExists: true,
+      await Gal.putImageBytes(
+        bytes,
+        album: 'MyApp Images', // Optional: create a custom album
       );
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -212,9 +236,9 @@ class _ImageViewerState extends State<ImageViewer> {
                       ),
                       elevation: 0,
                     ),
-                    child: Row(
+                    child: const Row(
                       mainAxisSize: MainAxisSize.min,
-                      children: const [
+                      children: [
                         Icon(
                           Icons.download_rounded,
                           size: 28,

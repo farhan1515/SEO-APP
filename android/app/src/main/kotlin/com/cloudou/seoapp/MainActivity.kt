@@ -1,4 +1,4 @@
-package com.example.seo_app
+package com.cloudou.seoapp
 
 import io.flutter.embedding.android.FlutterActivity
 

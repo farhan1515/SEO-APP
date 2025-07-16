@@ -168,73 +168,213 @@ class _HomeScreenState extends State<HomeScreen>
 
     return Scaffold(
       backgroundColor: const Color(0xFFFFFFFF),
-      body: Stack(
-        children: [
-          // Carousel section
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: SizedBox(
-              height: 310,
-              child: ValueListenableBuilder<bool>(
-                valueListenable: _isLoading,
-                builder: (context, isLoading, _) {
-                  if (isLoading) {
-                    return _buildLoadingCarousel();
-                  }
-                  return ValueListenableBuilder<List<Map<String, dynamic>>>(
-                    valueListenable: _upcomingPostsNotifier,
-                    builder: (context, upcomingPosts, _) {
-                      if (upcomingPosts.isEmpty) {
-                        return _buildEmptyCarousel();
+      body: LayoutBuilder(
+        builder: (context, constraints) {
+          double width = constraints.maxWidth;
+          bool isMobile = width < 600;
+          bool isTablet = width >= 600 && width < 1100;
+          bool isDesktop = width >= 1100;
+
+          // Mobile-like dimensions for all platforms
+          double carouselHeight = 180; // Reduced from 220
+          double profileSectionHeight = 56; // Reduced from 70
+          double profileAvatarRadius = 20; // Reduced from 23
+          double profileFontSize = 16; // Reduced from 18
+          double feedHeaderTop = carouselHeight - 6; // Adjusted positioning
+          double postListTop = feedHeaderTop + 65; // Adjusted positioning
+
+          Widget mainContent = Stack(
+            children: [
+              // Carousel section - now more compact
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  height: carouselHeight,
+                  child: ValueListenableBuilder<bool>(
+                    valueListenable: _isLoading,
+                    builder: (context, isLoading, _) {
+                      if (isLoading) {
+                        return _buildLoadingCarousel(carouselHeight);
                       }
-                      return _buildPostsCarousel(upcomingPosts);
+                      return ValueListenableBuilder<List<Map<String, dynamic>>>(
+                        valueListenable: _upcomingPostsNotifier,
+                        builder: (context, upcomingPosts, _) {
+                          if (upcomingPosts.isEmpty) {
+                            return _buildEmptyCarousel(carouselHeight);
+                          }
+                          return CarouselSlider(
+                            options: CarouselOptions(
+                              height: carouselHeight,
+                              viewportFraction: 1.0,
+                              autoPlay: true,
+                              enlargeCenterPage: false,
+                              onPageChanged: (index, reason) {
+                                _currentCarouselIndexNotifier.value = index;
+                              },
+                            ),
+                            items: upcomingPosts.map((post) {
+                              return Builder(
+                                builder: (context) {
+                                  return _buildCarouselItem(
+                                      post, carouselHeight);
+                                },
+                              );
+                            }).toList(),
+                          );
+                        },
+                      );
                     },
-                  );
-                },
+                  ),
+                ),
               ),
-            ),
-          ),
 
-          // Top profile section
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: _buildProfileSection(userId, displayName, photoURL),
-          ),
+              // Top profile section - now more compact
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                child: Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 16),
+                  height: profileSectionHeight,
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: const BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.only(
+                      bottomLeft: Radius.circular(28),
+                      bottomRight: Radius.circular(28),
+                    ),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Row(
+                        children: [
+                          GestureDetector(
+                            onTap: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    ProfileListScreen(userId: userId),
+                              ),
+                            ),
+                            child: CircleAvatar(
+                              radius: profileAvatarRadius,
+                              backgroundImage: photoURL != null
+                                  ? NetworkImage(photoURL)
+                                  : null,
+                              child: photoURL == null
+                                  ? const Icon(Icons.person,
+                                      color: Colors.white, size: 18)
+                                  : null,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Text(
+                            'Hi, ${displayName?.split(' ')[0] ?? 'User'}!',
+                            style: mont.copyWith(
+                                fontSize: profileFontSize,
+                                color: Colors.black,
+                                fontWeight: FontWeight.w600),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(SolarIconsOutline.heart),
+                            onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (context) =>
+                                      PendingApprovalsScreen()),
+                            ),
+                            color: Colors.black,
+                            iconSize: 20,
+                            constraints: const BoxConstraints(
+                              minWidth: 36,
+                              minHeight: 36,
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(SolarIconsOutline.settings),
+                            onPressed: () => Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                  builder: (context) => SettingScreen()),
+                            ),
+                            color: Colors.black,
+                            iconSize: 20,
+                            constraints: const BoxConstraints(
+                              minWidth: 36,
+                              minHeight: 36,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
 
-          // Explore Feed section
-          Positioned(
-            top: 300,
-            left: 10,
-            right: 20,
-            child: _buildFeedHeader(),
-          ),
+              // Explore Feed section
+              Positioned(
+                top: feedHeaderTop,
+                left: 10,
+                right: 20,
+                child: _buildFeedHeader(),
+              ),
 
-          // ButtonGroup and PostListScreen section
-          Positioned(
-            top: 370,
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: Column(
-              children: [
-                ButtonGroup(onTabSelected: _onTabSelected),
-                //const SizedBox(height: 8),
-                Expanded(child: _buildPostList(userId)),
-              ],
-            ),
-          ),
-        ],
+              // ButtonGroup and PostListScreen section
+              Positioned(
+                top: postListTop,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                child: Column(
+                  children: [
+                    ButtonGroup(
+                        onTabSelected: _onTabSelected,
+                        isLargeScreen: false), // Always use mobile style
+                    Expanded(child: _buildPostList(userId)),
+                  ],
+                ),
+              ),
+            ],
+          );
+
+          // On desktop/laptop, constrain width to 400px and center (reduced from 430px)
+          if (isDesktop) {
+            return Center(
+              child: Container(
+                width: 400,
+                color: Colors.white,
+                child: mainContent,
+              ),
+            );
+          } else if (isTablet) {
+            return Center(
+              child: Container(
+                width: 500, // Reduced from 800
+                color: Colors.white,
+                child: mainContent,
+              ),
+            );
+          } else {
+            // Mobile: use full width
+            return mainContent;
+          }
+        },
       ),
     );
   }
 
-  Widget _buildLoadingCarousel() {
+  Widget _buildLoadingCarousel(double height) {
     return Container(
-      height: 290,
+      height: height,
       color: Colors.deepPurple.shade900,
       child: const Center(
         child: CircularProgressIndicator(color: Colors.white),
@@ -242,16 +382,85 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _buildEmptyCarousel() {
+  Widget _buildEmptyCarousel(double height) {
     return Container(
-      height: 270,
+      height: height,
       color: Colors.deepPurple.shade900,
       child: Center(
         child: Text(
           'No upcoming posts with approved flyers',
-          style: mont.copyWith(color: Colors.white, fontSize: 16),
+          style: mont.copyWith(color: Colors.white, fontSize: 14),
         ),
       ),
+    );
+  }
+
+  Widget _buildPostsCarouselResponsive(double carouselHeight) {
+    // Use ValueListenableBuilder to listen for post updates
+    return ValueListenableBuilder<List<Map<String, dynamic>>>(
+      valueListenable: _upcomingPostsNotifier,
+      builder: (context, posts, _) {
+        if (_isLoading.value) {
+          return Center(child: CircularProgressIndicator());
+        }
+        if (posts.isEmpty) {
+          return Center(child: Text('No upcoming posts'));
+        }
+        return CarouselSlider(
+          options: CarouselOptions(
+            height: carouselHeight,
+            viewportFraction: 0.9,
+            enlargeCenterPage: true,
+            autoPlay: posts.length > 1,
+          ),
+          items: posts.map((post) {
+            return Builder(
+              builder: (context) {
+                return Card(
+                  margin:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16.0),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          post['title'] ?? 'No Title',
+                          style: mont.copyWith(
+                            fontSize: carouselHeight * 0.10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          post['description'] ?? '',
+                          style: mont.copyWith(
+                            fontSize: carouselHeight * 0.07,
+                          ),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Spacer(),
+                        Text(
+                          _formatScheduledDateTime(post['scheduled_date'] ?? '',
+                              post['scheduled_time'] ?? ''),
+                          style: mont.copyWith(
+                            fontSize: carouselHeight * 0.08,
+                            color: Colors.grey[700],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            );
+          }).toList(),
+        );
+      },
     );
   }
 
@@ -269,7 +478,7 @@ class _HomeScreenState extends State<HomeScreen>
                 _currentCarouselIndexNotifier.value = index;
               },
             ),
-            items: posts.map((post) => _buildCarouselItem(post)).toList(),
+            items: posts.map((post) => _buildCarouselItem(post, 290)).toList(),
           ),
         ),
         const SizedBox(height: 10),
@@ -300,6 +509,43 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  Widget _buildProfileSectionResponsive(
+      BuildContext context, double avatarSize, double fontSize) {
+    final user = FirebaseAuth.instance.currentUser;
+    return Row(
+      children: [
+        CircleAvatar(
+          radius: avatarSize / 2,
+          backgroundImage:
+              user?.photoURL != null ? NetworkImage(user!.photoURL!) : null,
+          child: user?.photoURL == null
+              ? Icon(Icons.person, size: avatarSize * 0.6)
+              : null,
+        ),
+        SizedBox(width: avatarSize * 0.4),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                user?.displayName ?? 'User',
+                style: mont.copyWith(
+                  fontSize: fontSize,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              Text(
+                user?.email ?? '',
+                style: mont.copyWith(
+                    fontSize: fontSize * 0.7, color: Colors.grey[600]),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _buildProfileSection(
       String userId, String? displayName, String? photoURL) {
     return Padding(
@@ -308,8 +554,8 @@ class _HomeScreenState extends State<HomeScreen>
         right: 20,
       ),
       child: Container(
-        height: 100,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        height: 70,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
         decoration: const BoxDecoration(
           color: Colors.white,
           borderRadius: BorderRadius.only(
@@ -319,9 +565,9 @@ class _HomeScreenState extends State<HomeScreen>
         ),
         child: Column(
           children: [
-            SizedBox(
-              height: 18,
-            ),
+            // SizedBox(
+            //   height: 18,
+            // ),
             Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -337,7 +583,7 @@ class _HomeScreenState extends State<HomeScreen>
                         ),
                       ),
                       child: CircleAvatar(
-                        radius: 25,
+                        radius: 23,
                         backgroundImage:
                             photoURL != null ? NetworkImage(photoURL) : null,
                         child: photoURL == null
@@ -381,6 +627,14 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
+  Widget _buildFeedHeaderResponsive(double tabFontSize) {
+    return ButtonGroup(
+      onTabSelected: (tab) {
+        _onTabSelected(tab);
+      },
+    );
+  }
+
   Widget _buildFeedHeader() {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -388,7 +642,7 @@ class _HomeScreenState extends State<HomeScreen>
         Text(
           ' Feed',
           style: mont.copyWith(
-            fontSize: 28,
+            fontSize: 26, // Slightly reduced
             fontWeight: FontWeight.bold,
             color: const Color(0xFF3E1885),
           ),
@@ -397,20 +651,21 @@ class _HomeScreenState extends State<HomeScreen>
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: ElevatedButton.icon(
             icon: const Icon(SolarIconsOutline.filter,
-                color: Colors.white, size: 20),
+                color: Colors.white, size: 18), // Reduced icon size
             label: Text(
               'Filter',
               style: mont.copyWith(
                 color: Colors.white,
                 fontWeight: FontWeight.w600,
-                fontSize: 14,
+                fontSize: 13, // Slightly reduced
               ),
             ),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFF3E1885),
               foregroundColor: Colors.white,
               elevation: 0,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+              padding: const EdgeInsets.symmetric(
+                  horizontal: 14, vertical: 8), // Reduced padding
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(8),
               ),
@@ -429,6 +684,12 @@ class _HomeScreenState extends State<HomeScreen>
         )
       ],
     );
+  }
+
+  Widget _buildPostListResponsive() {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return Center(child: Text('Not logged in'));
+    return _buildPostList(user.uid);
   }
 
   Widget _buildPostList(String userId) {
@@ -452,159 +713,173 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget _buildCarouselItem(Map<String, dynamic> post) {
-    return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => PostDetailScreen(
-            post: {
-              'title': post['title'] ?? 'No Title',
-              'description': post['description'] ?? '',
-              'highlight_text': post['highlighted_text'],
-              'image_base64': post['image_base64'],
-              'flyer_base64': post['flyer_base64'], // Added flyer_base64
-              'posted_by': post['user_name'] ?? 'Anonymous',
-              'created_at': post['created_at'] ?? DateTime.now().toString(),
-              'platforms': post['platforms'] ?? [],
-              'user_id': post['user_id'] ?? 'Anonymous',
-              'user_name': post['user_name'] ?? 'Anonymous',
-              'id': post['id'] ?? '',
-              'profile_name': post['profile_name'] ?? 'No Profile',
-              'scheduled_date': post['scheduled_date'],
-              'scheduled_time': post['scheduled_time'],
-              'scheduled_timezone': post['scheduled_timezone'],
-              'recurring_schedule': post['recurring_schedule'],
-              'reference_link':
-                  post['reference_link'] ?? '', // Added reference_link
-            },
-          ),
+ Widget _buildCarouselItem(Map<String, dynamic> post, double carouselHeight) {
+  // Determine which flyer image to show:
+  // Always show the original flyer_base64 unless updated_flyer_base64 is present and approved
+  String? flyerBase64ToShow = post['flyer_base64'];
+  if (post['flyer_approval_status'] == 'approved' && 
+      post['updated_flyer_base64'] != null && 
+      post['updated_flyer_base64'].toString().isNotEmpty) {
+    flyerBase64ToShow = post['updated_flyer_base64'];
+  }
+
+  return GestureDetector(
+    onTap: () => Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PostDetailScreen(
+          post: {
+            'title': post['title'] ?? 'No Title',
+            'description': post['description'] ?? '',
+            'highlight_text': post['highlighted_text'],
+            'image_base64': post['image_base64'],
+            'flyer_base64': post['flyer_base64'],
+            'posted_by': post['user_name'] ?? 'Anonymous',
+            'created_at': post['created_at'] ?? DateTime.now().toString(),
+            'platforms': post['platforms'] ?? [],
+            'user_id': post['user_id'] ?? 'Anonymous',
+            'user_name': post['user_name'] ?? 'Anonymous',
+            'id': post['id'] ?? '',
+            'profile_name': post['profile_name'] ?? 'No Profile',
+            'scheduled_date': post['scheduled_date'],
+            'scheduled_time': post['scheduled_time'],
+            'scheduled_timezone': post['scheduled_timezone'],
+            'recurring_schedule': post['recurring_schedule'],
+            'reference_link': post['reference_link'] ?? '',
+          },
         ),
       ),
-      child: Container(
-        width: MediaQuery.of(context).size.width,
-        height: 300,
-        child: Stack(
-          children: [
-            // Flyer image with proper handling
-            if (post['flyer_base64'] != null &&
-                post['flyer_base64'].toString().isNotEmpty)
-              Image.memory(
-                base64Decode(post['flyer_base64']
-                    .split(',')
-                    .last), // Handle data URI if needed
+    ),
+    child: Container(
+      width: double.infinity,
+      height: carouselHeight,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          // Flyer image with proper fitting, no blur on the image itself
+          if (flyerBase64ToShow != null && flyerBase64ToShow.isNotEmpty)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(0),
+              child: Image.memory(
+                base64Decode(flyerBase64ToShow.split(',').last),
                 width: double.infinity,
-                height: 310,
-                fit: BoxFit.cover,
+                height: carouselHeight,
+                fit: BoxFit.fill,
                 color: Colors.black.withOpacity(0.3),
                 colorBlendMode: BlendMode.darken,
                 errorBuilder: (context, error, stackTrace) => Container(
                   color: Colors.deepPurple.shade900,
-                  child: Icon(Icons.broken_image, color: Colors.white),
+                  child: const Icon(Icons.broken_image, color: Colors.white),
                 ),
-              )
-            else
-              Container(
-                width: double.infinity,
-                height: 290,
-                color: Colors.deepPurple.shade900,
               ),
+            )
+          else
+            Container(
+              width: double.infinity,
+              height: carouselHeight,
+              color: Colors.deepPurple.shade900,
+            ),
 
-            // Content overlay
-            Positioned(
-              top: 195,
-              left: 0,
-              right: 0,
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 2, sigmaY: 2),
-                child: Container(
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.transparent,
-                        Colors.black.withOpacity(0.8),
-                      ],
-                    ),
+          // Content overlay - match old code: blur only on overlay, sigma 2, gradient + white bg
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 1, sigmaY: 1),
+              child: Container(
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.transparent,
+                      Colors.black.withOpacity(0.8),
+                    ],
                   ),
-                  child: ClipRRect(
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 26, vertical: 10),
-                      decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.2),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 8),
-                            decoration: BoxDecoration(
-                              color: Colors.deepPurple.shade700,
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              'UPCOMING',
-                              style: mont.copyWith(
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
+                ),
+                child: ClipRRect(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 20, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withOpacity(0.2),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: Colors.deepPurple.shade700,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Text(
+                            'UPCOMING',
+                            style: mont.copyWith(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
                             ),
                           ),
-                          const SizedBox(height: 16),
-                          Row(
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  post['title'] ?? 'No Title',
-                                  style: mont.copyWith(
-                                    fontSize: 18,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                  ),
-                                  overflow: TextOverflow.ellipsis,
-                                  maxLines: 2,
-                                ),
-                              ),
-                              const SizedBox(width: 16),
-                              Text(
-                                _formatScheduledDateTime(
-                                  post['scheduled_date'] ?? '',
-                                  post['scheduled_time'] ?? '',
-                                ),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Expanded(
+                              child: Text(
+                                post['title'] ?? 'No Title',
                                 style: mont.copyWith(
-                                  fontSize: 14,
+                                  fontSize: 18,
                                   fontWeight: FontWeight.bold,
                                   color: Colors.white,
                                 ),
                                 overflow: TextOverflow.ellipsis,
+                                maxLines: 2,
                               ),
-                            ],
-                          ),
-                        ],
-                      ),
+                            ),
+                            const SizedBox(width: 16),
+                            Text(
+                              _formatScheduledDateTime(
+                                post['scheduled_date'] ?? '',
+                                post['scheduled_time'] ?? '',
+                              ),
+                              style: mont.copyWith(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ],
+                        ),
+                      ],
                     ),
                   ),
                 ),
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
-    );
-  }
+    ),
+  );
+}
 }
 
 class ButtonGroup extends StatefulWidget {
   final Function(String) onTabSelected;
+  final bool isLargeScreen;
 
-  const ButtonGroup({Key? key, required this.onTabSelected}) : super(key: key);
+  const ButtonGroup({
+    Key? key,
+    required this.onTabSelected,
+    this.isLargeScreen = false,
+  }) : super(key: key);
 
   @override
   _ButtonGroupState createState() => _ButtonGroupState();

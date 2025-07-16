@@ -16,11 +16,18 @@
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
 
     <application
-        android:label="SEO App"
-        android:name="${applicationName}"
+        android:label="SEO Credit"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
         tools:replace="android:label">
+
+        <meta-data
+            android:name="firebase_analytics_collection_enabled"
+            android:value="false" />
+        <meta-data
+            android:name="google_analytics_adid_collection_enabled"
+            android:value="false" />
+
 
         <activity
             android:enableOnBackInvokedCallback="true"

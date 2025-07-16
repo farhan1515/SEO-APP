@@ -22,6 +22,14 @@
           }
         },
         {
+          "client_id": "623745717856-snjesfbp55ceu76q9csnusjlpgfvk7r0.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.cloudou.seoapp",
+            "certificate_hash": "19637ea8b321fe66cebd070d290c74174c3ed01d"
+          }
+        },
+        {
           "client_id": "623745717856-c8k8fjsja7gfmov1j8d8s4fhug0lal3t.apps.googleusercontent.com",
           "client_type": 3
         }

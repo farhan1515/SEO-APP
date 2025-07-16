@@ -31,7 +31,7 @@ class MyApp extends StatelessWidget {
     return AppLifecycleManager(
       child: MaterialApp(
         debugShowCheckedModeBanner: false,
-        title: 'SEO App',
+        title: 'SEO Credit',
         theme: ThemeData(
           primarySwatch: Colors.blue,
         ),

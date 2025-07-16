@@ -23,6 +23,65 @@ class _PendingApprovalsScreenState extends State<PendingApprovalsScreen>
   final GlobalKey<RefreshIndicatorState> _refreshIndicatorKey =
       GlobalKey<RefreshIndicatorState>();
 
+  // Helper method to determine screen type
+  bool _isLargeScreen(BuildContext context) {
+    return MediaQuery.of(context).size.width > 1200;
+  }
+
+  bool _isTablet(BuildContext context) {
+    final width = MediaQuery.of(context).size.width;
+    return width > 600 && width <= 1200;
+  }
+
+  bool _isMobile(BuildContext context) {
+    return MediaQuery.of(context).size.width <= 600;
+  }
+
+  // Get responsive padding
+  EdgeInsets _getResponsivePadding(BuildContext context) {
+    if (_isLargeScreen(context)) {
+      return const EdgeInsets.symmetric(horizontal: 80, vertical: 32);
+    } else if (_isTablet(context)) {
+      return const EdgeInsets.symmetric(horizontal: 32, vertical: 24);
+    } else {
+      return const EdgeInsets.all(16);
+    }
+  }
+
+  // Get responsive card width
+  double _getCardWidth(BuildContext context) {
+    final screenWidth = MediaQuery.of(context).size.width;
+    if (_isLargeScreen(context)) {
+      return min(800, screenWidth * 0.6);
+    } else if (_isTablet(context)) {
+      return min(600, screenWidth * 0.8);
+    } else {
+      return screenWidth - 32;
+    }
+  }
+
+  // Get responsive image aspect ratio
+  double _getImageAspectRatio(BuildContext context) {
+    if (_isLargeScreen(context)) {
+      return 21 / 9; // Wider aspect ratio for large screens
+    } else if (_isTablet(context)) {
+      return 16 / 9;
+    } else {
+      return 16 / 9;
+    }
+  }
+
+  // Get responsive image height
+  double _getImageHeight(BuildContext context) {
+    if (_isLargeScreen(context)) {
+      return 200;
+    } else if (_isTablet(context)) {
+      return 180;
+    } else {
+      return 160;
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -71,7 +130,10 @@ class _PendingApprovalsScreenState extends State<PendingApprovalsScreen>
             style: TextStyle(fontWeight: FontWeight.bold),
           ),
           content: Container(
-            constraints: const BoxConstraints(maxHeight: 200),
+            constraints: BoxConstraints(
+              maxHeight: 200,
+              maxWidth: _isLargeScreen(context) ? 500 : 400,
+            ),
             child: TextField(
               controller: feedbackController,
               decoration: InputDecoration(
@@ -332,14 +394,14 @@ class _PendingApprovalsScreenState extends State<PendingApprovalsScreen>
       appBar: AppBar(
         title: const Text(
           'Pending Approvals',
-          style: TextStyle(fontWeight: FontWeight.bold),
+          style: TextStyle(fontWeight: FontWeight.bold, color: Colors.white),
         ),
         centerTitle: true,
         elevation: 0,
         backgroundColor: Theme.of(context).primaryColor,
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh, color: Colors.white),
             onPressed: () => _refreshIndicatorKey.currentState?.show(),
           ),
         ],
@@ -380,31 +442,33 @@ class _PendingApprovalsScreenState extends State<PendingApprovalsScreen>
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Container(
-                        height: 120,
-                        width: 120,
+                        height: _isLargeScreen(context) ? 150 : 120,
+                        width: _isLargeScreen(context) ? 150 : 120,
                         decoration: BoxDecoration(
                           color: Color(0xFFE0E8FF).withOpacity(0.7),
                           shape: BoxShape.circle,
                         ),
                         child: Icon(
-                          SolarIconsOutline
-                              .documentsMinimalistic, // or SolarIconsOutline.clipboardCheck
-                          size: 64,
+                          SolarIconsOutline.documentsMinimalistic,
+                          size: _isLargeScreen(context) ? 80 : 64,
                           color: Color(0xFF5664F5),
                         ),
                       ),
                       const SizedBox(height: 20),
-                      const Text(
+                      Text(
                         'No Pending Approvals',
                         style: TextStyle(
-                          fontSize: 20,
+                          fontSize: _isLargeScreen(context) ? 24 : 20,
                           fontWeight: FontWeight.bold,
                         ),
                       ),
                       const SizedBox(height: 8),
                       Text(
                         'You\'re all caught up!',
-                        style: TextStyle(color: Colors.grey[600]),
+                        style: TextStyle(
+                          color: Colors.grey[600],
+                          fontSize: _isLargeScreen(context) ? 16 : 14,
+                        ),
                       ),
                     ],
                   ),
@@ -416,43 +480,51 @@ class _PendingApprovalsScreenState extends State<PendingApprovalsScreen>
               return AnimatedBuilder(
                 animation: _animationController,
                 builder: (context, child) {
-                  return ListView.builder(
-                    padding: const EdgeInsets.all(16),
-                    itemCount: posts.length,
-                    itemBuilder: (context, index) {
-                      final post = posts[index].data() as Map<String, dynamic>;
-                      final postId = posts[index].id;
-                      final originalImage = post['image_base64'];
-                      final updatedImage = post['updated_image_base64'];
+                  return Center(
+                    child: Container(
+                      width: _getCardWidth(context),
+                      child: ListView.builder(
+                        padding: _getResponsivePadding(context),
+                        itemCount: posts.length,
+                        itemBuilder: (context, index) {
+                          final post = posts[index].data() as Map<String, dynamic>;
+                          final postId = posts[index].id;
 
-                      // Create a staggered animation effect
-                      final itemAnimation =
-                          Tween<double>(begin: 0.0, end: 1.0).animate(
-                        CurvedAnimation(
-                          parent: _animationController,
-                          curve: Interval(
-                            (index / posts.length) * 0.5,
-                            min(1.0, ((index + 1) / posts.length) * 0.5 + 0.5),
-                            curve: Curves.easeOut,
-                          ),
-                        ),
-                      );
+                          // Create a staggered animation effect
+                          final itemAnimation =
+                              Tween<double>(begin: 0.0, end: 1.0).animate(
+                            CurvedAnimation(
+                              parent: _animationController,
+                              curve: Interval(
+                                (index / posts.length) * 0.5,
+                                min(1.0, ((index + 1) / posts.length) * 0.5 + 0.5),
+                                curve: Curves.easeOut,
+                              ),
+                            ),
+                          );
 
-                      return FadeTransition(
-                        opacity: itemAnimation,
-                        child: SlideTransition(
-                          position: Tween<Offset>(
-                            begin: const Offset(0, 0.2),
-                            end: Offset.zero,
-                          ).animate(itemAnimation),
-                          child: _buildApprovalCard(
-                            context,
-                            post,
-                            postId,
-                          ),
-                        ),
-                      );
-                    },
+                          return FadeTransition(
+                            opacity: itemAnimation,
+                            child: SlideTransition(
+                              position: Tween<Offset>(
+                                begin: const Offset(0, 0.2),
+                                end: Offset.zero,
+                              ).animate(itemAnimation),
+                              child: Padding(
+                                padding: EdgeInsets.only(
+                                  bottom: _isLargeScreen(context) ? 32 : 20,
+                                ),
+                                child: _buildApprovalCard(
+                                  context,
+                                  post,
+                                  postId,
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
                   );
                 },
               );
@@ -460,14 +532,6 @@ class _PendingApprovalsScreenState extends State<PendingApprovalsScreen>
           ),
         ),
       ),
-      // floatingActionButton: FloatingActionButton(
-      //   onPressed: () {
-      //     // Navigate to view all posts or dashboard
-      //     Navigator.of(context).pushNamed('/dashboard');
-      //   },
-      //   backgroundColor: Theme.of(context).primaryColor,
-      //   child: const Icon(Icons.dashboard),
-      // ),
     );
   }
 
@@ -490,14 +554,13 @@ class _PendingApprovalsScreenState extends State<PendingApprovalsScreen>
 
     return Card(
       elevation: 4,
-      margin: const EdgeInsets.only(bottom: 20),
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Header with title and timestamp
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: EdgeInsets.all(_isLargeScreen(context) ? 20 : 16),
             decoration: BoxDecoration(
               color: Theme.of(context).primaryColor.withOpacity(0.1),
               borderRadius: const BorderRadius.only(
@@ -513,27 +576,22 @@ class _PendingApprovalsScreenState extends State<PendingApprovalsScreen>
                     children: [
                       Text(
                         postTitle,
-                        style: const TextStyle(
-                          fontSize: 18,
+                        style: TextStyle(
+                          fontSize: _isLargeScreen(context) ? 20 : 18,
                           fontWeight: FontWeight.bold,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                       const SizedBox(height: 4),
-                      // Text(
-                      //   'Created on $formattedDate',
-                      //   style: TextStyle(
-                      //     fontSize: 12,
-                      //     color: Colors.grey[600],
-                      //   ),
-                      // ),
                     ],
                   ),
                 ),
                 Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: _isLargeScreen(context) ? 16 : 12,
+                    vertical: _isLargeScreen(context) ? 8 : 6,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.amber.shade100,
                     borderRadius: BorderRadius.circular(20),
@@ -542,13 +600,16 @@ class _PendingApprovalsScreenState extends State<PendingApprovalsScreen>
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(Icons.pending,
-                          size: 14, color: Colors.amber.shade900),
+                      Icon(
+                        Icons.pending,
+                        size: _isLargeScreen(context) ? 16 : 14,
+                        color: Colors.amber.shade900,
+                      ),
                       const SizedBox(width: 4),
                       Text(
                         'Pending',
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: _isLargeScreen(context) ? 14 : 12,
                           fontWeight: FontWeight.bold,
                           color: Colors.amber.shade900,
                         ),
@@ -563,10 +624,18 @@ class _PendingApprovalsScreenState extends State<PendingApprovalsScreen>
           // Description (if available)
           if (postDescription.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              padding: EdgeInsets.fromLTRB(
+                _isLargeScreen(context) ? 20 : 16,
+                _isLargeScreen(context) ? 12 : 8,
+                _isLargeScreen(context) ? 20 : 16,
+                0,
+              ),
               child: Text(
                 postDescription,
-                style: TextStyle(color: Colors.grey[800], fontSize: 14),
+                style: TextStyle(
+                  color: Colors.grey[800],
+                  fontSize: _isLargeScreen(context) ? 16 : 14,
+                ),
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -574,36 +643,65 @@ class _PendingApprovalsScreenState extends State<PendingApprovalsScreen>
 
           // Flyer images section
           Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              children: [
-                if (originalFlyer != null)
-                  _buildFlyerThumbnail(
-                    context,
-                    originalFlyer,
-                    'original-flyer-$postId',
-                    'Original Flyer',
-                    Colors.blue.shade100,
-                    Colors.blue,
+            padding: EdgeInsets.all(_isLargeScreen(context) ? 20 : 16),
+            child: _isLargeScreen(context) || _isTablet(context)
+                ? Row(
+                    children: [
+                      if (originalFlyer != null)
+                        Expanded(
+                          child: _buildFlyerThumbnail(
+                            context,
+                            originalFlyer,
+                            'original-flyer-$postId',
+                            'Original Flyer',
+                            Colors.blue.shade100,
+                            Colors.blue,
+                          ),
+                        ),
+                      if (updatedFlyer != null && originalFlyer != null)
+                        SizedBox(width: _isLargeScreen(context) ? 24 : 16),
+                      if (updatedFlyer != null)
+                        Expanded(
+                          child: _buildFlyerThumbnail(
+                            context,
+                            updatedFlyer,
+                            'updated-flyer-$postId',
+                            'Updated Flyer',
+                            Colors.green.shade100,
+                            Colors.green,
+                          ),
+                        ),
+                    ],
+                  )
+                : Column(
+                    children: [
+                      if (originalFlyer != null)
+                        _buildFlyerThumbnail(
+                          context,
+                          originalFlyer,
+                          'original-flyer-$postId',
+                          'Original Flyer',
+                          Colors.blue.shade100,
+                          Colors.blue,
+                        ),
+                      if (updatedFlyer != null) ...[
+                        const SizedBox(height: 16),
+                        _buildFlyerThumbnail(
+                          context,
+                          updatedFlyer,
+                          'updated-flyer-$postId',
+                          'Updated Flyer',
+                          Colors.green.shade100,
+                          Colors.green,
+                        ),
+                      ],
+                    ],
                   ),
-                if (updatedFlyer != null) ...[
-                  const SizedBox(height: 16),
-                  _buildFlyerThumbnail(
-                    context,
-                    updatedFlyer,
-                    'updated-flyer-$postId',
-                    'Updated Flyer',
-                    Colors.green.shade100,
-                    Colors.green,
-                  ),
-                ],
-              ],
-            ),
           ),
 
           // Action buttons
           Container(
-            padding: const EdgeInsets.all(16),
+            padding: EdgeInsets.all(_isLargeScreen(context) ? 20 : 16),
             decoration: BoxDecoration(
               color: Colors.grey[100],
               borderRadius: const BorderRadius.only(
@@ -624,16 +722,28 @@ class _PendingApprovalsScreenState extends State<PendingApprovalsScreen>
                     post['title'] ?? 'Untitled',
                     updatedFlyer ?? '',
                   ),
-                  icon: const Icon(Icons.check_circle_outline),
-                  label: const Text('Approve'),
+                  icon: Icon(
+                    Icons.check_circle_outline,
+                    size: _isLargeScreen(context) ? 20 : 18,
+                  ),
+                  label: Text(
+                    'Approve',
+                    style: TextStyle(
+                      fontSize: _isLargeScreen(context) ? 16 : 14,
+                    ),
+                  ),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green.shade600,
                     foregroundColor: Colors.white,
+                    padding: EdgeInsets.symmetric(
+                      horizontal: _isLargeScreen(context) ? 24 : 20,
+                      vertical: _isLargeScreen(context) ? 12 : 10,
+                    ),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(30)),
                   ),
                 ),
-                const SizedBox(width: 12),
+                SizedBox(width: _isLargeScreen(context) ? 16 : 12),
                 OutlinedButton.icon(
                   onPressed: () => _handleApproval(
                     context,
@@ -644,11 +754,23 @@ class _PendingApprovalsScreenState extends State<PendingApprovalsScreen>
                     post['title'] ?? 'Untitled',
                     updatedFlyer ?? '',
                   ),
-                  icon: const Icon(Icons.feedback_outlined),
-                  label: const Text('Request Changes'),
+                  icon: Icon(
+                    Icons.feedback_outlined,
+                    size: _isLargeScreen(context) ? 20 : 18,
+                  ),
+                  label: Text(
+                    'Request Changes',
+                    style: TextStyle(
+                      fontSize: _isLargeScreen(context) ? 16 : 14,
+                    ),
+                  ),
                   style: OutlinedButton.styleFrom(
                     foregroundColor: Colors.red.shade600,
                     side: BorderSide(color: Colors.red.shade300),
+                    padding: EdgeInsets.symmetric(
+                      horizontal: _isLargeScreen(context) ? 24 : 20,
+                      vertical: _isLargeScreen(context) ? 12 : 10,
+                    ),
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(30)),
                   ),
@@ -669,6 +791,8 @@ class _PendingApprovalsScreenState extends State<PendingApprovalsScreen>
     Color bgColor,
     Color textColor,
   ) {
+    final imageHeight = _getImageHeight(context);
+    
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),
@@ -678,7 +802,10 @@ class _PendingApprovalsScreenState extends State<PendingApprovalsScreen>
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            padding: EdgeInsets.symmetric(
+              horizontal: _isLargeScreen(context) ? 16 : 12,
+              vertical: _isLargeScreen(context) ? 10 : 8,
+            ),
             decoration: BoxDecoration(
               color: bgColor,
               borderRadius: const BorderRadius.only(
@@ -694,37 +821,39 @@ class _PendingApprovalsScreenState extends State<PendingApprovalsScreen>
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
                     color: textColor,
-                    fontSize: 12,
+                    fontSize: _isLargeScreen(context) ? 14 : 12,
                   ),
                 ),
-                Icon(Icons.photo, size: 16, color: textColor),
+                Icon(
+                  Icons.photo,
+                  size: _isLargeScreen(context) ? 18 : 16,
+                  color: textColor,
+                ),
               ],
             ),
           ),
           Stack(
             children: [
-              AspectRatio(
-                aspectRatio: 16 / 9,
-                child: Container(
-                  width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[200],
+              Container(
+                height: imageHeight,
+                width: double.infinity,
+                decoration: BoxDecoration(
+                  color: Colors.grey[200],
+                  borderRadius: const BorderRadius.only(
+                    bottomLeft: Radius.circular(12),
+                    bottomRight: Radius.circular(12),
+                  ),
+                ),
+                child: Hero(
+                  tag: heroTag,
+                  child: ClipRRect(
                     borderRadius: const BorderRadius.only(
                       bottomLeft: Radius.circular(12),
                       bottomRight: Radius.circular(12),
                     ),
-                  ),
-                  child: Hero(
-                    tag: heroTag,
-                    child: ClipRRect(
-                      borderRadius: const BorderRadius.only(
-                        bottomLeft: Radius.circular(12),
-                        bottomRight: Radius.circular(12),
-                      ),
-                      child: Image.memory(
-                        base64Decode(flyerBase64),
-                        fit: BoxFit.cover,
-                      ),
+                    child: Image.memory(
+                      base64Decode(flyerBase64),
+                      fit: BoxFit.cover,
                     ),
                   ),
                 ),
@@ -755,15 +884,15 @@ class _PendingApprovalsScreenState extends State<PendingApprovalsScreen>
                 right: 8,
                 bottom: 8,
                 child: Container(
-                  padding: const EdgeInsets.all(6),
+                  padding: EdgeInsets.all(_isLargeScreen(context) ? 8 : 6),
                   decoration: BoxDecoration(
                     color: Colors.black.withOpacity(0.7),
                     borderRadius: BorderRadius.circular(20),
                   ),
-                  child: const Icon(
+                  child: Icon(
                     Icons.fullscreen,
                     color: Colors.white,
-                    size: 16,
+                    size: _isLargeScreen(context) ? 18 : 16,
                   ),
                 ),
               ),
