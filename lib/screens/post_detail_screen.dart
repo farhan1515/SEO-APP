@@ -36,7 +36,7 @@ class PostDetailScreen extends StatelessWidget {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text('Please login to chat with the designer'),
           backgroundColor: Colors.red,
         ),

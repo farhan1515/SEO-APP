@@ -755,7 +755,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const SizedBox(width: 8), // Spacing between field and button
             ElevatedButton(
               onPressed: () {
-                // Implement setup logic
+                _showSetupDialog(context, 'Facebook');
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Color(0xFF5664f5),
@@ -811,7 +811,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
             const SizedBox(width: 8), // Space between field and button
             ElevatedButton(
               onPressed: () {
-                // Implement setup logic
+                _showSetupDialog(context, 'Instagram');
               },
               style: ElevatedButton.styleFrom(
                 backgroundColor: Color(0xFF5664f5),
@@ -853,28 +853,54 @@ class _ProfileScreenState extends State<ProfileScreen> {
           onChanged: (_) => _updateProgress(),
         ),
         const SizedBox(height: 16),
-        TextFormField(
-          controller: _whatsappController,
-          style: sans.copyWith(fontSize: 16),
-          decoration: InputDecoration(
-            labelText: 'WhatsApp Group Names',
-            labelStyle: sans.copyWith(color: Colors.grey[600], fontSize: 15),
-            border: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: Colors.grey.shade300),
+        Row(
+          children: [
+            Expanded(
+              child: TextFormField(
+                controller: _whatsappController,
+                style: sans.copyWith(fontSize: 16),
+                decoration: InputDecoration(
+                  labelText: 'WhatsApp Group Names',
+                  labelStyle:
+                      sans.copyWith(color: Colors.grey[600], fontSize: 15),
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide(color: Colors.grey.shade300),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide:
+                        BorderSide(color: Colors.blue.shade400, width: 2),
+                  ),
+                  filled: true,
+                  fillColor: Colors.grey[50],
+                ),
+                onChanged: (_) => _updateProgress(),
+              ),
             ),
-            enabledBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: Colors.grey.shade300),
+            const SizedBox(width: 8), // Space between field and button
+            ElevatedButton(
+              onPressed: () {
+                _showSetupDialog(context, 'WhatsApp');
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Color(0xFF5664f5),
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+              ),
+              child: Text('Setup',
+                  style: sans.copyWith(color: Colors.white, fontSize: 15)),
             ),
-            focusedBorder: OutlineInputBorder(
-              borderRadius: BorderRadius.circular(8),
-              borderSide: BorderSide(color: Colors.blue.shade400, width: 2),
-            ),
-            filled: true,
-            fillColor: Colors.grey[50],
-          ),
-          onChanged: (_) => _updateProgress(),
+          ],
         ),
         const SizedBox(height: 16),
         TextFormField(
@@ -1382,6 +1408,297 @@ class _ProfileScreenState extends State<ProfileScreen> {
         SnackBar(content: Text('Error saving profile: $e')),
       );
     }
+  }
+
+  void _showSetupDialog(BuildContext context, String platform) {
+    showDialog(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext context) {
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          child: Container(
+            margin: const EdgeInsets.symmetric(horizontal: 20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(25),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.15),
+                  blurRadius: 20,
+                  offset: const Offset(0, 10),
+                ),
+              ],
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(30),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Icon with gradient background
+                  Container(
+                    width: 80,
+                    height: 80,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: _getPlatformGradient(platform),
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: _getPlatformGradient(platform)[0]
+                              .withOpacity(0.3),
+                          blurRadius: 15,
+                          offset: const Offset(0, 5),
+                        ),
+                      ],
+                    ),
+                    child: Icon(
+                      _getPlatformIcon(platform),
+                      color: Colors.white,
+                      size: 40,
+                    ),
+                  ),
+                  const SizedBox(height: 25),
+
+                  // Title
+                  Text(
+                    '$platform Setup Assistance',
+                    style: mont.copyWith(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: const Color(0xFF2D3748),
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 15),
+
+                  // Description
+                  Container(
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF7FAFC),
+                      borderRadius: BorderRadius.circular(15),
+                      border: Border.all(
+                        color: const Color(0xFFE2E8F0),
+                        width: 1,
+                      ),
+                    ),
+                    child: Text(
+                      'Our SEO manager will contact you and help you set up your $platform configuration for optimal social media integration.',
+                      style: mont.copyWith(
+                        fontSize: 16,
+                        color: const Color(0xFF4A5568),
+                        height: 1.5,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                  const SizedBox(height: 25),
+
+                  // Animated feature list
+                  Container(
+                    width: double.infinity,
+                    child: Column(
+                      children: [
+                        _buildFeatureItem('✨', 'Professional setup guidance'),
+                        const SizedBox(height: 8),
+                        _buildFeatureItem('🔧', 'Configuration optimization'),
+                        const SizedBox(height: 8),
+                        _buildFeatureItem('📞', 'Direct expert support'),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 30),
+
+                  // Action buttons
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextButton(
+                          onPressed: () => Navigator.of(context).pop(),
+                          style: TextButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 15),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              side: BorderSide(
+                                color: Colors.grey[300]!,
+                                width: 1.5,
+                              ),
+                            ),
+                          ),
+                          child: Text(
+                            'Maybe Later',
+                            style: mont.copyWith(
+                              fontSize: 16,
+                              color: const Color(0xFF718096),
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 15),
+                      Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: _getPlatformGradient(platform),
+                              begin: Alignment.centerLeft,
+                              end: Alignment.centerRight,
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: _getPlatformGradient(platform)[0]
+                                    .withOpacity(0.3),
+                                blurRadius: 8,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: ElevatedButton(
+                            onPressed: () {
+                              Navigator.of(context).pop();
+                              _handleSetupRequest(platform);
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.transparent,
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(vertical: 15),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                            ),
+                            child: Text(
+                              'Request Setup',
+                              style: mont.copyWith(
+                                fontSize: 16,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildFeatureItem(String emoji, String text) {
+    return Row(
+      children: [
+        Text(
+          emoji,
+          style: const TextStyle(fontSize: 16),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Text(
+            text,
+            style: mont.copyWith(
+              fontSize: 14,
+              color: const Color(0xFF4A5568),
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<Color> _getPlatformGradient(String platform) {
+    switch (platform.toLowerCase()) {
+      case 'facebook':
+        return [const Color(0xFF1877F2), const Color(0xFF42A5F5)];
+      case 'instagram':
+        return [
+          const Color(0xFFE4405F),
+          const Color(0xFFFD1D1D),
+          const Color(0xFFFFDC80)
+        ];
+      case 'whatsapp':
+        return [const Color(0xFF25D366), const Color(0xFF128C7E)];
+      default:
+        return [const Color(0xFF667EEA), const Color(0xFF764BA2)];
+    }
+  }
+
+  IconData _getPlatformIcon(String platform) {
+    switch (platform.toLowerCase()) {
+      case 'facebook':
+        return Icons.facebook;
+      case 'instagram':
+        return Icons.camera_alt;
+      case 'whatsapp':
+        return Icons.chat;
+      default:
+        return Icons.settings;
+    }
+  }
+
+  void _handleSetupRequest(String platform) {
+    // Show success message
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Row(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.2),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.check_circle,
+                color: Colors.white,
+                size: 20,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    'Setup Request Sent!',
+                    style: mont.copyWith(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  Text(
+                    'Our SEO manager will contact you soon.',
+                    style: mont.copyWith(
+                      color: Colors.white.withOpacity(0.9),
+                      fontSize: 14,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        backgroundColor: _getPlatformGradient(platform)[0],
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        duration: const Duration(seconds: 4),
+        margin: const EdgeInsets.all(16),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      ),
+    );
   }
 }
 

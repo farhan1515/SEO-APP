@@ -5,9 +5,11 @@ import 'package:seo_app/services/user_status.dart';
 import 'package:seo_app/services/notification_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'firebase_options.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await dotenv.load(fileName: ".env");
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );

@@ -190,3 +190,183 @@ exports.sendNotification = functions.firestore
       return null;
     }
   });
+
+// Add this entire block of code to the bottom of your functions/index.js file
+
+exports.getAllBusinessProfiles = functions.https.onCall(
+  async (data, context) => {
+    console.log("--- Function 'getAllBusinessProfiles' triggered ---");
+
+    // 1. Check if the user making the call is authenticated.
+    if (!context.auth) {
+      console.error("Authentication error: User is not authenticated.");
+      throw new functions.https.HttpsError(
+        "unauthenticated",
+        "Authentication required."
+      );
+    }
+
+    const userId = context.auth.uid;
+    const db = admin.firestore();
+    console.log(`Authenticated user ID: ${userId}`);
+
+    // 2. Check the user's role to ensure they are an SEO Manager.
+    try {
+      const roleDoc = await db.collection("roles").doc(userId).get();
+
+      if (!roleDoc.exists) {
+        console.error(
+          `Permission denied: Role document for user ${userId} not found.`
+        );
+        throw new functions.https.HttpsError(
+          "permission-denied",
+          "User role not found."
+        );
+      }
+
+      const userRole = (roleDoc.data().role || "").toLowerCase();
+      console.log(`User role found: "${userRole}"`);
+
+      if (userRole !== "seo.credit manager") {
+        console.error(
+          `Permission denied: User role "${userRole}" is not authorized.`
+        );
+        throw new functions.https.HttpsError(
+          "permission-denied",
+          "You do not have permission to perform this action."
+        );
+      }
+    } catch (error) {
+      console.error("Error verifying user permissions:", error);
+      throw new functions.https.HttpsError(
+        "internal",
+        "An error occurred while verifying permissions."
+      );
+    }
+
+    // 3. If security checks pass, fetch all profiles using admin privileges.
+    console.log("Permissions check passed. Fetching all business profiles...");
+    try {
+      const allProfiles = [];
+      const usersSnapshot = await db.collection("profiles").get();
+      console.log(
+        `Found ${usersSnapshot.docs.length} user documents in /profiles.`
+      );
+
+      // Use Promise.all to fetch subcollections in parallel for better performance
+      const subcollectionPromises = usersSnapshot.docs.map(async (userDoc) => {
+        const profilesSnapshot = await userDoc.ref.collection("profiles").get();
+        profilesSnapshot.forEach((profileDoc) => {
+          const profileData = profileDoc.data();
+          const businessDetails = profileData.businessDetails || {};
+
+          allProfiles.push({
+            id: `profiles/${userDoc.id}/profiles/${profileDoc.id}`,
+            name: businessDetails.name || "Unnamed Profile",
+          });
+        });
+      });
+
+      await Promise.all(subcollectionPromises);
+
+      console.log(
+        `Successfully fetched a total of ${allProfiles.length} profiles.`
+      );
+      return { profiles: allProfiles };
+    } catch (error) {
+      console.error("Error fetching business profiles:", error);
+      throw new functions.https.HttpsError(
+        "internal",
+        "Failed to fetch business profiles."
+      );
+    }
+  }
+);
+
+exports.getAllCustomers = functions.https.onCall(async (data, context) => {
+  console.log("--- Function 'getAllCustomers' triggered ---");
+
+  // 1. Check if the user making the call is authenticated.
+  if (!context.auth) {
+    console.error("Authentication error: User is not authenticated.");
+    throw new functions.https.HttpsError(
+      "unauthenticated",
+      "Authentication required."
+    );
+  }
+
+  const userId = context.auth.uid;
+  const db = admin.firestore();
+  console.log(`Authenticated user ID: ${userId}`);
+
+  // 2. Check the user's role to ensure they are an SEO Manager.
+  try {
+    const roleDoc = await db.collection("roles").doc(userId).get();
+
+    if (!roleDoc.exists) {
+      console.error(
+        `Permission denied: Role document for user ${userId} not found.`
+      );
+      throw new functions.https.HttpsError(
+        "permission-denied",
+        "User role not found."
+      );
+    }
+
+    const userRole = (roleDoc.data().role || "").toLowerCase();
+    console.log(`User role found: "${userRole}"`);
+
+    if (userRole !== "seo.credit manager") {
+      console.error(
+        `Permission denied: User role "${userRole}" is not authorized.`
+      );
+      throw new functions.https.HttpsError(
+        "permission-denied",
+        "You do not have permission to perform this action."
+      );
+    }
+  } catch (error) {
+    console.error("Error verifying user permissions:", error);
+    throw new functions.https.HttpsError(
+      "internal",
+      "An error occurred while verifying permissions."
+    );
+  }
+
+  // 3. If security checks pass, fetch all customers
+  console.log("Permissions check passed. Fetching all customers...");
+  try {
+    const customers = [];
+    const rolesSnapshot = await db
+      .collection("roles")
+      .where("role", "==", "Customer")
+      .get();
+    console.log(`Found ${rolesSnapshot.docs.length} customers.`);
+
+    // Use Promise.all to fetch user data in parallel for better performance
+    const userPromises = rolesSnapshot.docs.map(async (roleDoc) => {
+      const userId = roleDoc.id;
+      const userDoc = await db.collection("users").doc(userId).get();
+      const userData = userDoc.exists ? userDoc.data() : null;
+
+      if (userData) {
+        customers.push({
+          id: userId,
+          name: userData.displayName || "Unknown Customer",
+          email: userData.email || "No email",
+        });
+      }
+    });
+
+    await Promise.all(userPromises);
+
+    console.log(`Successfully fetched ${customers.length} customers.`);
+    return { customers };
+  } catch (error) {
+    console.error("Error fetching customers:", error);
+    throw new functions.https.HttpsError(
+      "internal",
+      "Failed to fetch customers."
+    );
+  }
+});

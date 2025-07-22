@@ -1,0 +1,88 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Helper function to check if user is SEO Manager
+    function isSeoManager() {
+      return get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'SEO.Credit Manager';
+    }
+
+    // Helper function to check if user is Graphic Designer
+    function isGraphicDesigner() {
+      return get(/databases/$(database)/documents/roles/$(request.auth.uid)).data.role == 'Graphic Designer';
+    }
+
+    // Helper function to check if user is Designer or Manager
+    function isDesignerOrManager() {
+      return isSeoManager() || isGraphicDesigner();
+    }
+
+    // Specific rule for post_requests collection
+    match /post_requests/{postId} {
+      allow read: if true;  // Anyone can read posts
+      
+      // Allow creation if:
+      // 1. User is authenticated AND
+      // 2. Either they are creating their own post OR they are an SEO Manager
+      allow create: if request.auth != null && 
+        (request.resource.data.user_id == request.auth.uid || isSeoManager());
+      
+      // Allow update/delete if:
+      // 1. User is authenticated AND
+      // 2. Either they own the post OR they are a Designer/Manager
+      allow update, delete: if request.auth != null && 
+        (resource.data.user_id == request.auth.uid || isDesignerOrManager());
+    }
+    
+    // Rules for profiles collection
+    match /profiles/{userId} {
+      // Allow SEO Managers and Graphic Designers to read all profiles
+      allow read: if request.auth != null && 
+        (request.auth.uid == userId || isDesignerOrManager());
+      
+      // Allow users to manage their own profiles
+      allow write: if request.auth != null && request.auth.uid == userId;
+      
+      // Allow access to subcollections
+      match /profiles/{profileId} {
+        // Allow SEO Managers and Graphic Designers to read all profiles
+        allow read: if request.auth != null && 
+          (request.auth.uid == userId || isDesignerOrManager());
+        
+        // Allow users to manage their own profiles
+        allow write: if request.auth != null && request.auth.uid == userId;
+      }
+    }
+
+    // Rules for roles collection
+    match /roles/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Rules for users collection
+    match /users/{userId} {
+      allow read: if request.auth != null && 
+        (request.auth.uid == userId || isDesignerOrManager());
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // Rules for conversations and other collections
+    match /conversations/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    match /user_conversations/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    match /notifications/{document=**} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Default rule for other collections
+    match /{document=**} {
+      allow read, write: if false;  // Deny by default for security
+    }
+  }
+} 

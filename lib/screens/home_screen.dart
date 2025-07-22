@@ -176,8 +176,8 @@ class _HomeScreenState extends State<HomeScreen>
           bool isDesktop = width >= 1100;
 
           // Mobile-like dimensions for all platforms
-          double carouselHeight = 180; // Reduced from 220
-          double profileSectionHeight = 56; // Reduced from 70
+          double carouselHeight = 220; // Reduced from 220
+          double profileSectionHeight = 60; // Reduced from 70
           double profileAvatarRadius = 20; // Reduced from 23
           double profileFontSize = 16; // Reduced from 18
           double feedHeaderTop = carouselHeight - 6; // Adjusted positioning
