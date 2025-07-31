@@ -210,68 +210,85 @@ exports.getAllBusinessProfiles = functions.https.onCall(
     const db = admin.firestore();
     console.log(`Authenticated user ID: ${userId}`);
 
-    // 2. Check the user's role to ensure they are an SEO Manager.
-    try {
-      const roleDoc = await db.collection("roles").doc(userId).get();
-
-      if (!roleDoc.exists) {
-        console.error(
-          `Permission denied: Role document for user ${userId} not found.`
-        );
-        throw new functions.https.HttpsError(
-          "permission-denied",
-          "User role not found."
-        );
-      }
-
-      const userRole = (roleDoc.data().role || "").toLowerCase();
-      console.log(`User role found: "${userRole}"`);
-
-      if (userRole !== "seo.credit manager") {
-        console.error(
-          `Permission denied: User role "${userRole}" is not authorized.`
-        );
-        throw new functions.https.HttpsError(
-          "permission-denied",
-          "You do not have permission to perform this action."
-        );
-      }
-    } catch (error) {
-      console.error("Error verifying user permissions:", error);
-      throw new functions.https.HttpsError(
-        "internal",
-        "An error occurred while verifying permissions."
-      );
-    }
+    // 2. Allow ANY authenticated user to fetch profiles for filtering purposes
+    // No role restrictions for this function
+    console.log(
+      "Authentication check passed. Any user can access profiles for filtering."
+    );
 
     // 3. If security checks pass, fetch all profiles using admin privileges.
     console.log("Permissions check passed. Fetching all business profiles...");
     try {
       const allProfiles = [];
-      const usersSnapshot = await db.collection("profiles").get();
+
+      // First, get all customers from roles collection
+      const customerRoles = await db
+        .collection("roles")
+        .where("role", "==", "Customer")
+        .get();
       console.log(
-        `Found ${usersSnapshot.docs.length} user documents in /profiles.`
+        `Found ${customerRoles.docs.length} customers in roles collection.`
       );
 
-      // Use Promise.all to fetch subcollections in parallel for better performance
-      const subcollectionPromises = usersSnapshot.docs.map(async (userDoc) => {
-        const profilesSnapshot = await userDoc.ref.collection("profiles").get();
-        profilesSnapshot.forEach((profileDoc) => {
-          const profileData = profileDoc.data();
-          const businessDetails = profileData.businessDetails || {};
+      if (customerRoles.docs.length === 0) {
+        console.log("No customers found in roles collection.");
+        return { profiles: [] };
+      }
 
-          allProfiles.push({
-            id: `profiles/${userDoc.id}/profiles/${profileDoc.id}`,
-            name: businessDetails.name || "Unnamed Profile",
+      // Method 1: Try to get profiles for each customer directly
+      for (const roleDoc of customerRoles.docs) {
+        const customerId = roleDoc.id;
+        console.log(`Fetching profiles for customer: ${customerId}`);
+
+        try {
+          const customerProfilesSnapshot = await db
+            .collection("profiles")
+            .doc(customerId)
+            .collection("profiles")
+            .get();
+
+          console.log(
+            `Found ${customerProfilesSnapshot.docs.length} profiles for customer ${customerId}`
+          );
+
+          customerProfilesSnapshot.forEach((profileDoc) => {
+            try {
+              const profileData = profileDoc.data();
+              const businessDetails = profileData.businessDetails || {};
+
+              console.log(
+                `Processing profile ${profileDoc.id} for customer ${customerId}:`,
+                {
+                  businessName: businessDetails.name || "Unnamed Profile",
+                }
+              );
+
+              allProfiles.push({
+                id: `profiles/${customerId}/profiles/${profileDoc.id}`,
+                name: businessDetails.name || "Unnamed Profile",
+                userId: customerId,
+                profileId: profileDoc.id,
+              });
+            } catch (profileError) {
+              console.error(
+                `Error processing profile ${profileDoc.id}:`,
+                profileError
+              );
+            }
           });
-        });
-      });
-
-      await Promise.all(subcollectionPromises);
+        } catch (customerError) {
+          console.error(
+            `Error fetching profiles for customer ${customerId}:`,
+            customerError
+          );
+        }
+      }
 
       console.log(
         `Successfully fetched a total of ${allProfiles.length} profiles.`
       );
+      console.log("All profiles:", allProfiles);
+
       return { profiles: allProfiles };
     } catch (error) {
       console.error("Error fetching business profiles:", error);

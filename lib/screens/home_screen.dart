@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:seo_app/screens/pending_approval_screen.dart';
 import 'package:seo_app/screens/post_detail_screen.dart';
 import 'package:seo_app/screens/profile_list_screen.dart';
@@ -31,6 +32,7 @@ class _HomeScreenState extends State<HomeScreen>
   final ValueNotifier<Map<String, dynamic>> _filtersNotifier =
       ValueNotifier<Map<String, dynamic>>({});
   final ValueNotifier<bool> _isLoading = ValueNotifier<bool>(true);
+  bool _isFetchingProfiles = false;
 
   List<String> _availableProfiles = [];
   List<Map<String, dynamic>> _cachedPosts = [];
@@ -60,20 +62,78 @@ class _HomeScreenState extends State<HomeScreen>
 
   Future<List<String>> _fetchAllProfileNames() async {
     try {
-      final profilesSnapshot = await FirebaseFirestore.instance
-          .collectionGroup('profiles')
-          .get(const GetOptions(source: Source.cache))
-          .then((value) => value)
-          .catchError((_) =>
-              FirebaseFirestore.instance.collectionGroup('profiles').get());
+      debugPrint('🔍 Starting to fetch profiles for filter...');
 
-      return profilesSnapshot.docs
-          .map((doc) => doc.data()['businessDetails']['name'] as String? ?? '')
-          .where((name) => name.isNotEmpty)
-          .toSet()
-          .toList();
+      // Method 1: Try cloud function approach (works for SEO Managers)
+      try {
+        debugPrint('🌟 Trying cloud function approach...');
+        final callable =
+            FirebaseFunctions.instance.httpsCallable('getAllBusinessProfiles');
+        final result = await callable.call();
+        final profiles = result.data['profiles'] as List<dynamic>?;
+
+        if (profiles != null && profiles.isNotEmpty) {
+          final profileNames = profiles
+              .map((profile) => profile['name'] as String? ?? '')
+              .where((name) => name.isNotEmpty)
+              .toSet()
+              .toList();
+
+          debugPrint(
+              '✅ Cloud function returned ${profileNames.length} profiles');
+          debugPrint('📋 Profile names: $profileNames');
+          return profileNames;
+        }
+      } catch (cloudError) {
+        debugPrint('⚠️ Cloud function failed: $cloudError');
+      }
+
+      // Method 2: Try direct Firestore collectionGroup query
+      debugPrint('🔄 Trying direct Firestore query...');
+      final profilesSnapshot =
+          await FirebaseFirestore.instance.collectionGroup('profiles').get();
+
+      debugPrint('📊 Found ${profilesSnapshot.docs.length} profile documents');
+
+      final profileNames = <String>[];
+
+      for (var doc in profilesSnapshot.docs) {
+        try {
+          final data = doc.data() as Map<String, dynamic>;
+          debugPrint('📄 Processing doc ${doc.id}: ${data.keys}');
+
+          final businessDetails =
+              data['businessDetails'] as Map<String, dynamic>?;
+          if (businessDetails != null) {
+            final name = businessDetails['name'] as String?;
+            if (name != null && name.trim().isNotEmpty) {
+              profileNames.add(name.trim());
+              debugPrint('✅ Added profile: "$name"');
+            } else {
+              debugPrint('❌ Empty name in doc ${doc.id}');
+            }
+          } else {
+            debugPrint('❌ No businessDetails in doc ${doc.id}');
+          }
+        } catch (docError) {
+          debugPrint('❌ Error processing document ${doc.id}: $docError');
+        }
+      }
+
+      final uniqueProfileNames = profileNames.toSet().toList();
+      debugPrint(
+          '🎯 Direct query result: ${uniqueProfileNames.length} unique profiles');
+      debugPrint('📋 Profile names: $uniqueProfileNames');
+
+      return uniqueProfileNames;
     } catch (e) {
-      debugPrint('Error fetching profile names: $e');
+      debugPrint('💥 ERROR fetching profile names: $e');
+      debugPrint('📝 Error type: ${e.runtimeType}');
+      if (e.toString().contains('permission')) {
+        debugPrint(
+            '🚫 PERMISSION DENIED - Firestore rules need to be updated!');
+        debugPrint('💡 Try deploying: firebase deploy --only firestore:rules');
+      }
       return [];
     }
   }
@@ -639,13 +699,51 @@ class _HomeScreenState extends State<HomeScreen>
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          ' Feed',
-          style: mont.copyWith(
-            fontSize: 26, // Slightly reduced
-            fontWeight: FontWeight.bold,
-            color: const Color(0xFF3E1885),
-          ),
+        Row(
+          children: [
+            Text(
+              ' Feed',
+              style: mont.copyWith(
+                fontSize: 26, // Slightly reduced
+                fontWeight: FontWeight.bold,
+                color: const Color(0xFF3E1885),
+              ),
+            ),
+            ValueListenableBuilder<Map<String, dynamic>>(
+              valueListenable: _filtersNotifier,
+              builder: (context, filters, _) {
+                if (filters.isNotEmpty && filters['filterType'] != null) {
+                  return Container(
+                    margin: const EdgeInsets.only(left: 8),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade100,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.orange.shade300),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.filter_alt,
+                            size: 14, color: Colors.orange.shade700),
+                        SizedBox(width: 4),
+                        Text(
+                          'Filtered',
+                          style: mont.copyWith(
+                            fontSize: 12,
+                            color: Colors.orange.shade700,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }
+                return SizedBox.shrink();
+              },
+            ),
+          ],
         ),
         Container(
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -653,7 +751,7 @@ class _HomeScreenState extends State<HomeScreen>
             icon: const Icon(SolarIconsOutline.filter,
                 color: Colors.white, size: 18), // Reduced icon size
             label: Text(
-              'Filter',
+              _isFetchingProfiles ? 'Loading...' : 'Filter',
               style: mont.copyWith(
                 color: Colors.white,
                 fontWeight: FontWeight.w600,
@@ -670,16 +768,42 @@ class _HomeScreenState extends State<HomeScreen>
                 borderRadius: BorderRadius.circular(8),
               ),
             ),
-            onPressed: () async {
-              final allProfileNames = await _fetchAllProfileNames();
-              showDialog(
-                context: context,
-                builder: (context) => FilterDialog(
-                  onApplyFilters: (filters) => _filtersNotifier.value = filters,
-                  allProfileNames: allProfileNames,
-                ),
-              );
-            },
+            onPressed: _isFetchingProfiles
+                ? null
+                : () async {
+                    if (_isFetchingProfiles) return;
+
+                    setState(() {
+                      _isFetchingProfiles = true;
+                    });
+
+                    try {
+                      debugPrint(
+                          '🔘 Filter button pressed - fetching profiles...');
+                      final allProfileNames = await _fetchAllProfileNames();
+                      debugPrint(
+                          '🔘 Passing ${allProfileNames.length} profiles to dialog');
+
+                      if (mounted) {
+                        showDialog(
+                          context: context,
+                          builder: (context) => FilterDialog(
+                            onApplyFilters: (filters) {
+                              debugPrint('🔘 Filters applied: $filters');
+                              _filtersNotifier.value = filters;
+                            },
+                            allProfileNames: allProfileNames,
+                          ),
+                        );
+                      }
+                    } finally {
+                      if (mounted) {
+                        setState(() {
+                          _isFetchingProfiles = false;
+                        });
+                      }
+                    }
+                  },
           ),
         )
       ],
@@ -713,162 +837,162 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
- Widget _buildCarouselItem(Map<String, dynamic> post, double carouselHeight) {
-  // Determine which flyer image to show:
-  // Always show the original flyer_base64 unless updated_flyer_base64 is present and approved
-  String? flyerBase64ToShow = post['flyer_base64'];
-  if (post['flyer_approval_status'] == 'approved' && 
-      post['updated_flyer_base64'] != null && 
-      post['updated_flyer_base64'].toString().isNotEmpty) {
-    flyerBase64ToShow = post['updated_flyer_base64'];
-  }
+  Widget _buildCarouselItem(Map<String, dynamic> post, double carouselHeight) {
+    // Determine which flyer image to show:
+    // Always show the original flyer_base64 unless updated_flyer_base64 is present and approved
+    String? flyerBase64ToShow = post['flyer_base64'];
+    if (post['flyer_approval_status'] == 'approved' &&
+        post['updated_flyer_base64'] != null &&
+        post['updated_flyer_base64'].toString().isNotEmpty) {
+      flyerBase64ToShow = post['updated_flyer_base64'];
+    }
 
-  return GestureDetector(
-    onTap: () => Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (context) => PostDetailScreen(
-          post: {
-            'title': post['title'] ?? 'No Title',
-            'description': post['description'] ?? '',
-            'highlight_text': post['highlighted_text'],
-            'image_base64': post['image_base64'],
-            'flyer_base64': post['flyer_base64'],
-            'posted_by': post['user_name'] ?? 'Anonymous',
-            'created_at': post['created_at'] ?? DateTime.now().toString(),
-            'platforms': post['platforms'] ?? [],
-            'user_id': post['user_id'] ?? 'Anonymous',
-            'user_name': post['user_name'] ?? 'Anonymous',
-            'id': post['id'] ?? '',
-            'profile_name': post['profile_name'] ?? 'No Profile',
-            'scheduled_date': post['scheduled_date'],
-            'scheduled_time': post['scheduled_time'],
-            'scheduled_timezone': post['scheduled_timezone'],
-            'recurring_schedule': post['recurring_schedule'],
-            'reference_link': post['reference_link'] ?? '',
-          },
+    return GestureDetector(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => PostDetailScreen(
+            post: {
+              'title': post['title'] ?? 'No Title',
+              'description': post['description'] ?? '',
+              'highlight_text': post['highlighted_text'],
+              'image_base64': post['image_base64'],
+              'flyer_base64': post['flyer_base64'],
+              'posted_by': post['user_name'] ?? 'Anonymous',
+              'created_at': post['created_at'] ?? DateTime.now().toString(),
+              'platforms': post['platforms'] ?? [],
+              'user_id': post['user_id'] ?? 'Anonymous',
+              'user_name': post['user_name'] ?? 'Anonymous',
+              'id': post['id'] ?? '',
+              'profile_name': post['profile_name'] ?? 'No Profile',
+              'scheduled_date': post['scheduled_date'],
+              'scheduled_time': post['scheduled_time'],
+              'scheduled_timezone': post['scheduled_timezone'],
+              'recurring_schedule': post['recurring_schedule'],
+              'reference_link': post['reference_link'] ?? '',
+            },
+          ),
         ),
       ),
-    ),
-    child: Container(
-      width: double.infinity,
-      height: carouselHeight,
-      child: Stack(
-        fit: StackFit.expand,
-        children: [
-          // Flyer image with proper fitting, no blur on the image itself
-          if (flyerBase64ToShow != null && flyerBase64ToShow.isNotEmpty)
-            ClipRRect(
-              borderRadius: BorderRadius.circular(0),
-              child: Image.memory(
-                base64Decode(flyerBase64ToShow.split(',').last),
-                width: double.infinity,
-                height: carouselHeight,
-                fit: BoxFit.fill,
-                color: Colors.black.withOpacity(0.3),
-                colorBlendMode: BlendMode.darken,
-                errorBuilder: (context, error, stackTrace) => Container(
-                  color: Colors.deepPurple.shade900,
-                  child: const Icon(Icons.broken_image, color: Colors.white),
-                ),
-              ),
-            )
-          else
-            Container(
-              width: double.infinity,
-              height: carouselHeight,
-              color: Colors.deepPurple.shade900,
-            ),
-
-          // Content overlay - match old code: blur only on overlay, sigma 2, gradient + white bg
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 1, sigmaY: 1),
-              child: Container(
-                width: double.infinity,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter,
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withOpacity(0.8),
-                    ],
+      child: Container(
+        width: double.infinity,
+        height: carouselHeight,
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            // Flyer image with proper fitting, no blur on the image itself
+            if (flyerBase64ToShow != null && flyerBase64ToShow.isNotEmpty)
+              ClipRRect(
+                borderRadius: BorderRadius.circular(0),
+                child: Image.memory(
+                  base64Decode(flyerBase64ToShow.split(',').last),
+                  width: double.infinity,
+                  height: carouselHeight,
+                  fit: BoxFit.fill,
+                  color: Colors.black.withOpacity(0.3),
+                  colorBlendMode: BlendMode.darken,
+                  errorBuilder: (context, error, stackTrace) => Container(
+                    color: Colors.deepPurple.shade900,
+                    child: const Icon(Icons.broken_image, color: Colors.white),
                   ),
                 ),
-                child: ClipRRect(
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 20, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: Colors.white.withOpacity(0.2),
+              )
+            else
+              Container(
+                width: double.infinity,
+                height: carouselHeight,
+                color: Colors.deepPurple.shade900,
+              ),
+
+            // Content overlay - match old code: blur only on overlay, sigma 2, gradient + white bg
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 1, sigmaY: 1),
+                child: Container(
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.transparent,
+                        Colors.black.withOpacity(0.8),
+                      ],
                     ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 12, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.deepPurple.shade700,
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Text(
-                            'UPCOMING',
-                            style: mont.copyWith(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.white,
+                  ),
+                  child: ClipRRect(
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 20, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Colors.deepPurple.shade700,
+                              borderRadius: BorderRadius.circular(16),
+                            ),
+                            child: Text(
+                              'UPCOMING',
+                              style: mont.copyWith(
+                                fontSize: 11,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white,
+                              ),
                             ),
                           ),
-                        ),
-                        const SizedBox(height: 12),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          crossAxisAlignment: CrossAxisAlignment.center,
-                          children: [
-                            Expanded(
-                              child: Text(
-                                post['title'] ?? 'No Title',
+                          const SizedBox(height: 12),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  post['title'] ?? 'No Title',
+                                  style: mont.copyWith(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                  maxLines: 2,
+                                ),
+                              ),
+                              const SizedBox(width: 16),
+                              Text(
+                                _formatScheduledDateTime(
+                                  post['scheduled_date'] ?? '',
+                                  post['scheduled_time'] ?? '',
+                                ),
                                 style: mont.copyWith(
-                                  fontSize: 18,
+                                  fontSize: 14,
                                   fontWeight: FontWeight.bold,
                                   color: Colors.white,
                                 ),
                                 overflow: TextOverflow.ellipsis,
-                                maxLines: 2,
                               ),
-                            ),
-                            const SizedBox(width: 16),
-                            Text(
-                              _formatScheduledDateTime(
-                                post['scheduled_date'] ?? '',
-                                post['scheduled_time'] ?? '',
-                              ),
-                              style: mont.copyWith(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ],
-                        ),
-                      ],
+                            ],
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
-    ),
-  );
-}
+    );
+  }
 }
 
 class ButtonGroup extends StatefulWidget {

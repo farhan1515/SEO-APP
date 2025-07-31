@@ -53,18 +53,14 @@ class _PostScreenState extends State<PostScreen> {
   String? _scheduledTimezone;
   RecurringSchedule? _recurringSchedule;
   String? _selectedProfileId;
-  String? _selectedCustomerId;
   List<Map<String, dynamic>> _userProfiles = [];
-  List<Map<String, dynamic>> _customers = [];
   final _referenceLinkController = TextEditingController();
   Uint8List? _selectedFlyerImageBytes;
 
   bool _isDesignerOrManager = false;
   bool _isSeoManager = false;
   bool _isLoadingProfiles = true;
-  bool _isLoadingCustomers = false;
   String _profileError = '';
-  String _customerError = '';
 
   final GlobalKey<ScheduleSelectorState> _scheduleSelectorKey = GlobalKey();
 
@@ -126,74 +122,15 @@ class _PostScreenState extends State<PostScreen> {
         });
       }
 
-      // If editing an existing post, just fetch profiles directly
-      if (widget.existingData != null) {
-        await _fetchUserProfiles();
-      }
-      // If SEO Manager creating new post, fetch customers first
-      else if (_isSeoManager) {
-        await _fetchCustomers();
-      }
-      // Regular users creating new posts
-      else {
-        await _fetchUserProfiles();
-      }
+      // Always fetch user profiles directly
+      await _fetchUserProfiles();
     } catch (e) {
       print("Error checking user role: $e");
       if (mounted) setState(() => _isLoadingProfiles = false);
     }
   }
 
-  Future<void> _fetchCustomers() async {
-    if (mounted)
-      setState(() {
-        _isLoadingCustomers = true;
-        _customerError = '';
-      });
-
-    try {
-      print("--- Calling Cloud Function 'getAllCustomers' as Manager ---");
-      final HttpsCallable callable =
-          FirebaseFunctions.instance.httpsCallable('getAllCustomers');
-      final result = await callable.call();
-
-      print("--- Cloud Function Response: ${result.data} ---");
-
-      // Fix the type casting issue
-      final responseData = result.data as Map<String, dynamic>;
-      final List<dynamic> customersFromServer =
-          responseData['customers'] as List<dynamic>;
-
-      // Convert to proper type
-      final List<Map<String, dynamic>> customers =
-          customersFromServer.map((customer) {
-        return Map<String, dynamic>.from(customer as Map<Object?, Object?>);
-      }).toList();
-
-      if (mounted) {
-        setState(() {
-          _customers = customers;
-          _isLoadingCustomers = false;
-        });
-      }
-    } on FirebaseFunctionsException catch (e) {
-      print('--- CLOUD FUNCTION ERROR: ${e.message} ---');
-      if (mounted)
-        setState(() {
-          _customerError = e.message ?? 'Failed to load customers from server.';
-          _isLoadingCustomers = false;
-        });
-    } catch (e) {
-      print('--- FATAL ERROR in _fetchCustomers: $e ---');
-      if (mounted)
-        setState(() {
-          _customerError = 'An unexpected error occurred: ${e.toString()}';
-          _isLoadingCustomers = false;
-        });
-    }
-  }
-
-  // Modify _fetchUserProfiles to handle editing scenario properly
+  // Modify _fetchUserProfiles to handle SEO Manager differently
   Future<void> _fetchUserProfiles() async {
     if (mounted)
       setState(() {
@@ -245,33 +182,48 @@ class _PostScreenState extends State<PostScreen> {
           }
         }
       }
-      // SEO Manager creating a new post
+      // SEO Manager creating a new post - fetch ALL business profiles
       else if (_isSeoManager) {
-        if (_selectedCustomerId == null) {
-          if (mounted)
-            setState(() {
-              _userProfiles = [];
-              _profileError = 'Please select a customer first.';
-            });
-          return;
-        }
+        print(
+            "--- Calling Cloud Function 'getAllBusinessProfiles' as Manager ---");
 
-        final querySnapshot = await FirebaseFirestore.instance
-            .collection('profiles')
-            .doc(_selectedCustomerId)
-            .collection('profiles')
-            .get();
+        final HttpsCallable callable =
+            FirebaseFunctions.instance.httpsCallable('getAllBusinessProfiles');
+        final result = await callable.call();
+
+        print("--- Cloud Function Response: ${result.data} ---");
+
+        // Fix the type casting issue
+        final responseData = result.data as Map<String, dynamic>;
+        final List<dynamic> profilesFromServer =
+            responseData['profiles'] as List<dynamic>;
+
+        print(
+            "--- Profiles from server count: ${profilesFromServer.length} ---");
+
+        // Convert to proper type
+        final List<Map<String, dynamic>> profiles =
+            profilesFromServer.map((profile) {
+          print("--- Processing profile: $profile ---");
+          return Map<String, dynamic>.from(profile as Map<Object?, Object?>);
+        }).toList();
+
+        print("--- Final profiles count: ${profiles.length} ---");
 
         if (mounted) {
           setState(() {
-            _userProfiles = querySnapshot.docs.map((doc) {
-              return {
-                'id': 'profiles/${_selectedCustomerId}/profiles/${doc.id}',
-                'name':
-                    doc.data()['businessDetails']['name'] ?? 'Unnamed Profile',
-              };
-            }).toList();
+            _userProfiles = profiles;
           });
+        }
+
+        // If no profiles found, let's add a helpful message
+        if (profiles.isEmpty) {
+          if (mounted) {
+            setState(() {
+              _profileError =
+                  'No business profiles found. Please ensure customers have created their business profiles.';
+            });
+          }
         }
       }
       // Standard user creating a new post
@@ -295,10 +247,16 @@ class _PostScreenState extends State<PostScreen> {
           });
         }
       }
+    } on FirebaseFunctionsException catch (e) {
+      print('--- CLOUD FUNCTION ERROR: ${e.message} ---');
+      if (mounted)
+        setState(() => _profileError =
+            e.message ?? 'Failed to load profiles from server.');
     } catch (e) {
       print('--- FATAL ERROR in _fetchUserProfiles: $e ---');
       if (mounted)
-        setState(() => _profileError = 'An unexpected error occurred.');
+        setState(() =>
+            _profileError = 'An unexpected error occurred: ${e.toString()}');
     } finally {
       if (mounted) setState(() => _isLoadingProfiles = false);
     }
@@ -395,6 +353,29 @@ class _PostScreenState extends State<PostScreen> {
     }
   }
 
+  Future<String> _getCustomerNameFromProfile(String profileId) async {
+    try {
+      // Extract customer ID from profile path: profiles/{userId}/profiles/{profileId}
+      final profilePath = profileId.split('/');
+      if (profilePath.length >= 2) {
+        final customerId = profilePath[1];
+
+        // Get customer's display name from users collection
+        final userDoc = await FirebaseFirestore.instance
+            .collection('users')
+            .doc(customerId)
+            .get();
+
+        if (userDoc.exists) {
+          return userDoc.data()?['displayName'] ?? 'Unknown Customer';
+        }
+      }
+    } catch (e) {
+      print('Error getting customer name: $e');
+    }
+    return 'Unknown Customer';
+  }
+
   Future<void> _submitData() async {
     final title = _titleController.text.trim();
     final description = _descriptionController.text.trim();
@@ -443,13 +424,13 @@ class _PostScreenState extends State<PostScreen> {
         'highlighted_text': highlightedText,
         'platforms': selectedPlatforms,
         'user_id': widget.existingData?['user_id'] ??
-            (_isSeoManager ? _selectedCustomerId : currentUser?.uid),
+            (_isSeoManager && _selectedProfileId != null
+                ? _selectedProfileId!
+                    .split('/')[1] // Extract customer ID from profile path
+                : currentUser?.uid),
         'user_name': widget.existingData?['user_name'] ??
-            (_isSeoManager
-                ? _customers.firstWhere(
-                    (customer) => customer['id'] == _selectedCustomerId,
-                    orElse: () => {'name': 'Unknown Customer'},
-                  )['name']
+            (_isSeoManager && _selectedProfileId != null
+                ? await _getCustomerNameFromProfile(_selectedProfileId!)
                 : currentUser?.displayName ?? 'Anonymous'),
         'created_by': widget.existingData?['created_by'] ??
             currentUser?.uid, // Track who created the post
@@ -525,7 +506,16 @@ class _PostScreenState extends State<PostScreen> {
         final originalPosterName =
             widget.existingData!['user_name'] ?? 'Anonymous';
         final chatId = _generateChatId(currentUser!.uid, originalPosterId);
+
+        // Check if conversation exists, create if it doesn't
+        final conversationDoc = await FirebaseFirestore.instance
+            .collection('conversations')
+            .doc(chatId)
+            .get();
+
         final batch = FirebaseFirestore.instance.batch();
+
+        // Create message
         final messageRef = FirebaseFirestore.instance
             .collection('conversations')
             .doc(chatId)
@@ -540,13 +530,37 @@ class _PostScreenState extends State<PostScreen> {
           'timestamp': FieldValue.serverTimestamp(),
           'status': 'sent',
         });
-        batch.update(
+
+        // Create or update conversation document
+        if (!conversationDoc.exists) {
+          // Create new conversation document
+          batch.set(
+            FirebaseFirestore.instance.collection('conversations').doc(chatId),
+            {
+              'participants': [currentUser.uid, originalPosterId],
+              'createdAt': FieldValue.serverTimestamp(),
+              'lastMessage': 'Updated flyer for post: "$title"',
+              'lastMessageTime': FieldValue.serverTimestamp(),
+              'updatedAt': FieldValue.serverTimestamp(),
+              'lastActive': {
+                currentUser.uid: FieldValue.serverTimestamp(),
+                originalPosterId: FieldValue.serverTimestamp(),
+              },
+            },
+          );
+        } else {
+          // Update existing conversation document
+          batch.update(
             FirebaseFirestore.instance.collection('conversations').doc(chatId),
             {
               'lastMessage': 'Updated flyer for post: "$title"',
               'lastMessageTime': FieldValue.serverTimestamp(),
               'updatedAt': FieldValue.serverTimestamp(),
-            });
+            },
+          );
+        }
+
+        // Update user conversations
         batch.set(
           FirebaseFirestore.instance
               .collection('user_conversations')
@@ -579,6 +593,8 @@ class _PostScreenState extends State<PostScreen> {
           },
           SetOptions(merge: true),
         );
+
+        // Send notification
         await NotificationService.sendNotification(
           recipientId: originalPosterId,
           title: '📢 New Flyer Update',
@@ -591,6 +607,8 @@ class _PostScreenState extends State<PostScreen> {
           postId: widget.existingData!['id'],
           postTitle: title,
         );
+
+        // Commit all changes
         await batch.commit();
       }
 
@@ -786,185 +804,7 @@ class _PostScreenState extends State<PostScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // Add Customer Selection for SEO Manager (only when creating new posts)
-                    if (_isSeoManager && widget.existingData == null)
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Select Customer',
-                            style: mont.copyWith(
-                              color: Color(0xFF000000),
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          if (_isLoadingCustomers)
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 12),
-                              decoration: BoxDecoration(
-                                color: Colors.grey[100],
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                    color: Colors.grey[300]!, width: 1.5),
-                              ),
-                              child: Row(
-                                children: [
-                                  SizedBox(
-                                    width: 16,
-                                    height: 16,
-                                    child: CircularProgressIndicator(
-                                        strokeWidth: 2),
-                                  ),
-                                  const SizedBox(width: 12),
-                                  Text(
-                                    'Loading customers...',
-                                    style: mont.copyWith(
-                                      color: Colors.grey[600],
-                                      fontSize: 14,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            )
-                          else if (_customerError.isNotEmpty)
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.all(16.0),
-                              decoration: BoxDecoration(
-                                color: Colors.red.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(color: Colors.red),
-                              ),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    _customerError,
-                                    style: mont.copyWith(
-                                        color: Colors.red.shade900),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  ElevatedButton(
-                                    onPressed: _fetchCustomers,
-                                    style: ElevatedButton.styleFrom(
-                                      backgroundColor: Colors.red,
-                                      padding: EdgeInsets.symmetric(
-                                          horizontal: 16, vertical: 8),
-                                    ),
-                                    child: Text(
-                                      'Retry',
-                                      style: mont.copyWith(
-                                          color: Colors.white, fontSize: 12),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            )
-                          else if (_customers.isNotEmpty)
-                            DropdownButtonFormField<String>(
-                              value: _selectedCustomerId,
-                              isExpanded: true,
-                              hint: Text(
-                                'Choose a customer',
-                                style: mont.copyWith(
-                                  color: Colors.grey,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w200,
-                                ),
-                              ),
-                              items: _customers.map((customer) {
-                                return DropdownMenuItem<String>(
-                                  value: customer['id'],
-                                  child: Text(
-                                    '${customer['name']} (${customer['email']})',
-                                    style: mont.copyWith(fontSize: 14),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                );
-                              }).toList(),
-                              onChanged: (value) {
-                                setState(() {
-                                  _selectedCustomerId = value;
-                                  _selectedProfileId = null;
-                                  _userProfiles = [];
-                                });
-                                _fetchUserProfiles();
-                              },
-                              decoration: InputDecoration(
-                                filled: true,
-                                fillColor: Colors.white,
-                                border: OutlineInputBorder(
-                                  borderRadius: BorderRadius.circular(10),
-                                  borderSide: BorderSide(
-                                      width: 1.5, color: Color(0xFF3E1885)),
-                                ),
-                                contentPadding: EdgeInsets.symmetric(
-                                    horizontal: 16, vertical: 12),
-                              ),
-                            )
-                          else
-                            Container(
-                              width: double.infinity,
-                              padding: const EdgeInsets.symmetric(
-                                  horizontal: 16, vertical: 12),
-                              decoration: BoxDecoration(
-                                color: Colors.orange.withOpacity(0.1),
-                                borderRadius: BorderRadius.circular(10),
-                                border: Border.all(
-                                    color: Colors.orange, width: 1.5),
-                              ),
-                              child: Text(
-                                'No customers found. Please ensure there are registered customers.',
-                                style: mont.copyWith(
-                                  color: Colors.orange[800],
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ),
-                          const SizedBox(height: 24),
-                        ],
-                      ),
-
-                    // Show customer info when editing posts created by SEO Manager
-                    if (_isSeoManager && widget.existingData != null)
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Customer (Read Only)',
-                            style: mont.copyWith(
-                              color: Color(0xFF000000),
-                              fontSize: 14,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          const SizedBox(height: 8),
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 12),
-                            decoration: BoxDecoration(
-                              color: Colors.grey[100],
-                              borderRadius: BorderRadius.circular(10),
-                              border: Border.all(
-                                  color: Colors.grey[300]!, width: 1.5),
-                            ),
-                            child: Text(
-                              widget.existingData!['user_name'] ??
-                                  'Unknown Customer',
-                              style: mont.copyWith(
-                                color: Colors.grey[600],
-                                fontSize: 14,
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                        ],
-                      ),
+                    // Remove all customer selection UI - SEO Managers now see all profiles directly
 
                     // Existing Profile Selection
                     if (_isLoadingProfiles)
@@ -1087,9 +927,7 @@ class _PostScreenState extends State<PostScreen> {
                               ),
                             ),
                             child: Text(
-                              _isSeoManager
-                                  ? 'Please select a customer first'
-                                  : 'No profiles found. Please create a profile first.',
+                              'No profiles found. Please create a profile first.',
                               style: mont.copyWith(
                                 color: Colors.grey[600],
                                 fontSize: 14,

@@ -36,18 +36,16 @@ service cloud.firestore {
     
     // Rules for profiles collection
     match /profiles/{userId} {
-      // Allow SEO Managers and Graphic Designers to read all profiles
-      allow read: if request.auth != null && 
-        (request.auth.uid == userId || isDesignerOrManager());
+      // Allow ALL authenticated users to read profiles for filtering purposes
+      allow read: if request.auth != null;
       
       // Allow users to manage their own profiles
       allow write: if request.auth != null && request.auth.uid == userId;
       
       // Allow access to subcollections
       match /profiles/{profileId} {
-        // Allow SEO Managers and Graphic Designers to read all profiles
-        allow read: if request.auth != null && 
-          (request.auth.uid == userId || isDesignerOrManager());
+        // Allow ALL authenticated users to read profiles for filtering purposes
+        allow read: if request.auth != null;
         
         // Allow users to manage their own profiles
         allow write: if request.auth != null && request.auth.uid == userId;

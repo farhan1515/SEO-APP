@@ -108,9 +108,13 @@ class _PostListScreenState extends State<PostListScreen>
       // Apply filters if they exist
       if (widget.filters != null && widget.filters!.isNotEmpty) {
         final filterType = widget.filters!['filterType'];
+        print(
+            'Applying filter type: $filterType with filters: ${widget.filters}');
         switch (filterType) {
           case 'profile_name':
             if (widget.filters!['profileName'] != null) {
+              print(
+                  'Filtering by profile name: ${widget.filters!['profileName']}');
               query = query.where('profile_name',
                   isEqualTo: widget.filters!['profileName']);
             }
@@ -164,6 +168,7 @@ class _PostListScreenState extends State<PostListScreen>
       final postsWithProfiles = await Future.wait(filteredDocs.map((doc) async {
         final data = doc.data() as Map<String, dynamic>;
         String profileName = data['profile_name'] ?? 'No Profile';
+        print('Post ${doc.id} has profile_name: "$profileName"');
         return {
           'doc': doc,
           'profileName': profileName,
@@ -228,31 +233,54 @@ class _PostListScreenState extends State<PostListScreen>
     }
 
     if (_posts.isEmpty) {
+      String message = 'No posts found';
+      if (widget.filters != null && widget.filters!.isNotEmpty) {
+        final filterType = widget.filters!['filterType'];
+        switch (filterType) {
+          case 'profile_name':
+            message =
+                'No posts found for profile: ${widget.filters!['profileName']}';
+            break;
+          case 'title':
+            message = 'No posts found matching: ${widget.filters!['title']}';
+            break;
+          case 'scheduled_date':
+            message = 'No posts found for the selected date';
+            break;
+        }
+      }
+
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Icon(
-              Icons.article_outlined,
+              widget.filters != null && widget.filters!.isNotEmpty
+                  ? Icons.search_off
+                  : Icons.article_outlined,
               size: 64,
               color: Colors.grey[400],
             ),
             const SizedBox(height: 16),
             Text(
-              'No posts found',
+              message,
               style: poppins.copyWith(
-                fontSize: 18,
+                fontSize: 16,
                 color: Colors.grey[600],
               ),
+              textAlign: TextAlign.center,
             ),
-            const SizedBox(height: 8),
-            Text(
-              'Try adjusting your filters',
-              style: poppins.copyWith(
-                fontSize: 14,
-                color: Colors.grey[500],
+            if (widget.filters != null && widget.filters!.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  'Try adjusting your filters',
+                  style: poppins.copyWith(
+                    fontSize: 14,
+                    color: Colors.grey[500],
+                  ),
+                ),
               ),
-            ),
           ],
         ),
       );

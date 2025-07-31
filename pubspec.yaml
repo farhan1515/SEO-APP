@@ -2,7 +2,7 @@ name: seo_app
 description: "SEO Credit"
 publish_to: "none"
 
-version: 1.0.0+5
+version: 1.0.0+6
 
 environment:
   sdk: ^3.7.0-41.0.dev
