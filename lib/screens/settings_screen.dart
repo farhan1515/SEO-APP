@@ -106,11 +106,11 @@ class _SettingScreenState extends State<SettingScreen> {
                     ),
                     Row(
                       children: [
-                        IconButton(
-                          icon: Icon(Icons.favorite_border),
-                          onPressed: () {},
-                          color: Colors.black,
-                        ),
+                        // IconButton(
+                        //   icon: Icon(Icons.favorite_border),
+                        //   onPressed: () {},
+                        //   color: Colors.black,
+                        // ),
                         IconButton(
                           icon: Icon(Icons.settings),
                           onPressed: () {

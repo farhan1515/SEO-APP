@@ -43,11 +43,17 @@ class _ChatScreenState extends State<ChatScreen> {
   late final String _chatId;
   Stream<DocumentSnapshot>? _userStatusStream;
   Timer? _statusUpdateTimer;
+
+  // Typing indicator variables
+  Timer? _typingTimer;
+  bool _isTyping = false;
+  Stream<DocumentSnapshot>? _typingStatusStream;
   @override
   void initState() {
     super.initState();
     _chatId = _generateChatId(_currentUser!.uid, widget.recipientId);
     _setupScrollListener();
+    _setupTypingListener();
     _statusUpdateTimer = Timer.periodic(const Duration(minutes: 1), (timer) {
       UserStatusService.updateUserStatus();
     });
@@ -57,17 +63,32 @@ class _ChatScreenState extends State<ChatScreen> {
         .collection('users')
         .doc(widget.recipientId)
         .snapshots();
+
+    // Set up typing status stream with error handling
+    try {
+      _typingStatusStream = FirebaseFirestore.instance
+          .collection('typing_status')
+          .doc(_chatId)
+          .snapshots();
+    } catch (e) {
+      print('Error setting up typing status stream: $e');
+      // Continue without typing status if it fails
+    }
+
+    // Reset unread count when opening chat
+    _resetUnreadCount();
   }
 
   // Function to format last active time
-  String _getLastActiveStatus(Timestamp? lastActive) {
+  String _getLastActiveStatus(Timestamp? lastActive, bool? isOnline) {
     if (lastActive == null) return 'Offline';
 
     final now = DateTime.now();
     final lastActiveTime = lastActive.toDate();
     final difference = now.difference(lastActiveTime);
 
-    if (difference.inMinutes < 1) {
+    // Check if user is currently online (updated within last 2 minutes)
+    if (isOnline == true && difference.inMinutes < 2) {
       return 'Active now';
     } else if (difference.inMinutes < 60) {
       return 'Active ${difference.inMinutes}m ago';
@@ -83,6 +104,8 @@ class _ChatScreenState extends State<ChatScreen> {
     _controller.dispose();
     _scrollController.dispose();
     _statusUpdateTimer?.cancel();
+    _typingTimer?.cancel();
+    _clearTypingStatus();
     super.dispose();
   }
 
@@ -93,6 +116,92 @@ class _ChatScreenState extends State<ChatScreen> {
         // Load more messages if needed
       }
     });
+  }
+
+  void _setupTypingListener() {
+    _controller.addListener(() {
+      final text = _controller.text;
+
+      // Only trigger typing status on meaningful changes
+      if (text.isNotEmpty && !_isTyping) {
+        _setTypingStatus(true);
+      } else if (text.isEmpty && _isTyping) {
+        _setTypingStatus(false);
+      }
+
+      // Reset timer whenever user types (but only if typing)
+      if (text.isNotEmpty && _isTyping) {
+        _typingTimer?.cancel();
+        _typingTimer = Timer(const Duration(seconds: 3), () {
+          if (mounted) {
+            _setTypingStatus(false);
+          }
+        });
+      }
+    });
+  }
+
+  Future<void> _setTypingStatus(bool isTyping) async {
+    if (_isTyping == isTyping || !mounted) return;
+
+    setState(() {
+      _isTyping = isTyping;
+    });
+
+    try {
+      await _firestore.collection('typing_status').doc(_chatId).set({
+        _currentUser!.uid: {
+          'isTyping': isTyping,
+          'timestamp': FieldValue.serverTimestamp(),
+        },
+      }, SetOptions(merge: true));
+    } catch (e) {
+      // Silently handle typing status errors to avoid UI disruption
+      print('Error updating typing status: $e');
+      // Revert the local state if update failed
+      if (mounted) {
+        setState(() {
+          _isTyping = !isTyping;
+        });
+      }
+    }
+  }
+
+  Future<void> _clearTypingStatus() async {
+    if (!mounted) return;
+
+    try {
+      await _firestore.collection('typing_status').doc(_chatId).set({
+        _currentUser!.uid: {
+          'isTyping': false,
+          'timestamp': FieldValue.serverTimestamp(),
+        },
+      }, SetOptions(merge: true));
+    } catch (e) {
+      // Silently handle typing status errors during cleanup
+      print('Error clearing typing status: $e');
+    }
+  }
+
+  bool _isRecipientTyping(DocumentSnapshot? typingDoc) {
+    if (typingDoc == null || !typingDoc.exists) return false;
+
+    final data = typingDoc.data() as Map<String, dynamic>?;
+    final recipientData = data?[widget.recipientId] as Map<String, dynamic>?;
+
+    if (recipientData == null) return false;
+
+    final isTyping = recipientData['isTyping'] as bool? ?? false;
+    final timestamp = recipientData['timestamp'] as Timestamp?;
+
+    if (!isTyping || timestamp == null) return false;
+
+    // Check if typing status is recent (within last 5 seconds)
+    final now = DateTime.now();
+    final typingTime = timestamp.toDate();
+    final difference = now.difference(typingTime);
+
+    return difference.inSeconds < 5;
   }
 
   Future<void> _uploadProject() async {
@@ -144,6 +253,9 @@ class _ChatScreenState extends State<ChatScreen> {
     final localProjectBase64 = _projectBase64;
     _controller.clear();
     _clearImage();
+
+    // Clear typing status when sending message
+    _setTypingStatus(false);
 
     try {
       print('Sending message:');
@@ -672,539 +784,745 @@ class _ChatScreenState extends State<ChatScreen> {
     return '${ids[0]}-${ids[1]}';
   }
 
+  Future<void> _resetUnreadCount() async {
+    try {
+      await _firestore
+          .collection('user_conversations')
+          .doc(_currentUser!.uid)
+          .collection('chats')
+          .doc(_chatId)
+          .update({
+        'unreadCount': 0,
+        'lastActive': FieldValue.serverTimestamp(),
+      });
+    } catch (e) {
+      print('Error resetting unread count: $e');
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        elevation: 1,
-        backgroundColor: Colors.white,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_ios, color: Colors.black87),
-          onPressed: () => Navigator.pop(context),
-        ),
-        title: Row(
-          children: [
-            CircleAvatar(
-              radius: 20,
-              backgroundColor: Colors.grey[200],
-              child: Text(
-                widget.recipientName[0].toUpperCase(),
-                style: const TextStyle(
-                  color: Colors.black87,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+    return GestureDetector(
+        onTap: () {
+          // Mark user as active when they interact with the chat
+          UserStatusService.markUserActive();
+        },
+        child: Scaffold(
+          appBar: AppBar(
+            elevation: 1,
+            backgroundColor: Colors.white,
+            leading: IconButton(
+              icon: const Icon(Icons.arrow_back_ios, color: Colors.black87),
+              onPressed: () => Navigator.pop(context),
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    widget.recipientName,
+            title: Row(
+              children: [
+                CircleAvatar(
+                  radius: 20,
+                  backgroundColor: Colors.grey[200],
+                  child: Text(
+                    widget.recipientName[0].toUpperCase(),
                     style: const TextStyle(
                       color: Colors.black87,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w600,
+                      fontWeight: FontWeight.bold,
                     ),
-                    overflow: TextOverflow.ellipsis,
                   ),
-                  StreamBuilder<DocumentSnapshot>(
-                    stream: _userStatusStream,
-                    builder: (context, snapshot) {
-                      if (!snapshot.hasData) {
-                        return const Text(
-                          'Offline',
-                          style: TextStyle(
-                            color: Colors.grey,
-                            fontSize: 12,
-                          ),
-                        );
-                      }
-
-                      final userData =
-                          snapshot.data!.data() as Map<String, dynamic>?;
-                      final lastActive = userData?['lastActive'] as Timestamp?;
-
-                      return Text(
-                        _getLastActiveStatus(lastActive),
-                        style: TextStyle(
-                          color: lastActive != null &&
-                                  DateTime.now()
-                                          .difference(lastActive.toDate())
-                                          .inMinutes <
-                                      1
-                              ? Colors.green
-                              : Colors.grey,
-                          fontSize: 12,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.recipientName,
+                        style: const TextStyle(
+                          color: Colors.black87,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w600,
                         ),
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          PopupMenuButton<String>(
-            icon: const Icon(Icons.more_vert, color: Colors.black87),
-            onSelected: (value) {
-              if (value == 'history') {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => HistoryScreen(chatId: _chatId),
-                  ),
-                );
-              }
-            },
-            itemBuilder: (context) => [
-              const PopupMenuItem(
-                value: 'history',
-                child: Text('History'),
-              ),
-            ],
-          ),
-        ],
-      ),
-      body: Container(
-        decoration: BoxDecoration(
-          color: Colors.grey[100],
-        ),
-        child: Column(
-          children: [
-            // Display post context if available
-            if (widget.postContext != null)
-              Container(
-                padding: const EdgeInsets.all(16),
-                color: Colors.white,
-                child: Row(
-                  children: [
-                    if (widget.postContext!['image_base64'] != null)
-                      GestureDetector(
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (context) => ImageViewer(
-                                imageBase64:
-                                    widget.postContext!['image_base64'],
-                                tag:
-                                    'post-context-${widget.postContext!['id']}',
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      StreamBuilder<DocumentSnapshot>(
+                        stream: _userStatusStream,
+                        builder: (context, snapshot) {
+                          if (!snapshot.hasData) {
+                            return const Text(
+                              'Offline',
+                              style: TextStyle(
+                                color: Colors.grey,
+                                fontSize: 12,
                               ),
+                            );
+                          }
+
+                          final userData =
+                              snapshot.data!.data() as Map<String, dynamic>?;
+                          final lastActive =
+                              userData?['lastActive'] as Timestamp?;
+                          final isOnline =
+                              userData?['isOnline'] as bool? ?? false;
+
+                          return Text(
+                            _getLastActiveStatus(lastActive, isOnline),
+                            style: TextStyle(
+                              color: isOnline &&
+                                      lastActive != null &&
+                                      DateTime.now()
+                                              .difference(lastActive.toDate())
+                                              .inMinutes <
+                                          2
+                                  ? Colors.green
+                                  : Colors.grey,
+                              fontSize: 12,
                             ),
                           );
                         },
-                        child: Hero(
-                          tag: 'post-context-${widget.postContext!['id']}',
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: Image.memory(
-                              base64Decode(widget.postContext!['image_base64']),
-                              width: 50,
-                              height: 50,
-                              fit: BoxFit.cover,
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            actions: [
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert, color: Colors.black87),
+                onSelected: (value) {
+                  if (value == 'history') {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => HistoryScreen(chatId: _chatId),
+                      ),
+                    );
+                  }
+                },
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
+                    value: 'history',
+                    child: Text('History'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+          body: Container(
+            decoration: BoxDecoration(
+              color: Colors.grey[100],
+            ),
+            child: Column(
+              children: [
+                // Display post context if available
+                if (widget.postContext != null)
+                  Container(
+                    padding: const EdgeInsets.all(16),
+                    color: Colors.white,
+                    child: Row(
+                      children: [
+                        if (widget.postContext!['image_base64'] != null)
+                          GestureDetector(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => ImageViewer(
+                                    imageBase64:
+                                        widget.postContext!['image_base64'],
+                                    tag:
+                                        'post-context-${widget.postContext!['id']}',
+                                  ),
+                                ),
+                              );
+                            },
+                            child: Hero(
+                              tag: 'post-context-${widget.postContext!['id']}',
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.memory(
+                                  base64Decode(
+                                      widget.postContext!['image_base64']),
+                                  width: 50,
+                                  height: 50,
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
+                            ),
+                          ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            'Discussing Post: ${widget.postContext!['title']}',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.black87,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                Expanded(
+                  child: StreamBuilder<QuerySnapshot>(
+                    stream: _firestore
+                        .collection('conversations')
+                        .doc(_chatId)
+                        .collection('messages')
+                        .orderBy('timestamp', descending: true)
+                        .limit(50)
+                        .snapshots(),
+                    builder: (context, snapshot) {
+                      if (snapshot.connectionState == ConnectionState.waiting) {
+                        return const Center(child: CircularProgressIndicator());
+                      }
+                      final messages = snapshot.data?.docs ?? [];
+
+                      return StreamBuilder<DocumentSnapshot>(
+                        stream: _typingStatusStream,
+                        builder: (context, typingSnapshot) {
+                          // Safely handle typing status with fallback
+                          final isRecipientTyping = _typingStatusStream != null
+                              ? _isRecipientTyping(typingSnapshot.data)
+                              : false;
+
+                          return ListView.builder(
+                            controller: _scrollController,
+                            reverse: true,
+                            itemCount:
+                                messages.length + (isRecipientTyping ? 1 : 0),
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            itemBuilder: (context, index) {
+                              // Show typing indicator as first item (top of reversed list)
+                              if (isRecipientTyping && index == 0) {
+                                return const _TypingIndicator();
+                              }
+
+                              // Adjust index for messages when typing indicator is present
+                              final messageIndex =
+                                  isRecipientTyping ? index - 1 : index;
+                              final data = messages[messageIndex].data()
+                                  as Map<String, dynamic>;
+                              final isMe =
+                                  data['senderId'] == _currentUser!.uid;
+                              final senderId = data['senderId'];
+
+                              return Align(
+                                alignment: isMe
+                                    ? Alignment.centerRight
+                                    : Alignment.centerLeft,
+                                child: Padding(
+                                  padding: EdgeInsets.only(
+                                    left: isMe ? 64 : 16,
+                                    right: isMe ? 16 : 64,
+                                    bottom: 8,
+                                  ),
+                                  child: Column(
+                                    crossAxisAlignment: isMe
+                                        ? CrossAxisAlignment.end
+                                        : CrossAxisAlignment.start,
+                                    children: [
+                                      if (data['final_project'] != null)
+                                        Container(
+                                          decoration: BoxDecoration(
+                                            color: Colors.white,
+                                            borderRadius:
+                                                BorderRadius.circular(16),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: Colors.black
+                                                    .withOpacity(0.05),
+                                                blurRadius: 10,
+                                                offset: const Offset(0, 5),
+                                              ),
+                                            ],
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              GestureDetector(
+                                                onTap: () {
+                                                  Navigator.push(
+                                                    context,
+                                                    MaterialPageRoute(
+                                                      builder: (context) =>
+                                                          ImageViewer(
+                                                        imageBase64: data[
+                                                            'final_project'],
+                                                        tag:
+                                                            'project-${messages[messageIndex].id}',
+                                                      ),
+                                                    ),
+                                                  );
+                                                },
+                                                child: Hero(
+                                                  tag:
+                                                      'project-${messages[messageIndex].id}',
+                                                  child: ClipRRect(
+                                                    borderRadius:
+                                                        const BorderRadius
+                                                            .vertical(
+                                                      top: Radius.circular(16),
+                                                    ),
+                                                    child: ConstrainedBox(
+                                                      constraints:
+                                                          BoxConstraints(
+                                                        maxWidth: MediaQuery.of(
+                                                                    context)
+                                                                .size
+                                                                .width *
+                                                            0.8,
+                                                        maxHeight:
+                                                            MediaQuery.of(
+                                                                        context)
+                                                                    .size
+                                                                    .height *
+                                                                0.4,
+                                                      ),
+                                                      child: Image.memory(
+                                                        base64Decode(data[
+                                                            'final_project']),
+                                                        fit: BoxFit.contain,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                ),
+                                              ),
+                                              if (!isMe &&
+                                                  data['approved'] == null)
+                                                Padding(
+                                                  padding:
+                                                      const EdgeInsets.all(12),
+                                                  child: Row(
+                                                    mainAxisSize:
+                                                        MainAxisSize.min,
+                                                    mainAxisAlignment:
+                                                        MainAxisAlignment.start,
+                                                    children: [
+                                                      _ActionButton(
+                                                        onPressed: () =>
+                                                            _handleApproval(
+                                                          false,
+                                                          messages[messageIndex]
+                                                              .id,
+                                                          senderId,
+                                                        ),
+                                                        text: "Decline",
+                                                        color:
+                                                            Colors.red.shade600,
+                                                        isApprove: false,
+                                                      ),
+                                                      const SizedBox(width: 28),
+                                                      _ActionButton(
+                                                        onPressed: () =>
+                                                            _handleApproval(
+                                                          true,
+                                                          messages[messageIndex]
+                                                              .id,
+                                                          senderId,
+                                                        ),
+                                                        text: "Approve",
+                                                        color: Colors
+                                                            .green.shade600,
+                                                        isApprove: true,
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                              if (data['approved'] != null)
+                                                Container(
+                                                  width: double.infinity,
+                                                  padding: const EdgeInsets
+                                                      .symmetric(
+                                                      vertical: 12,
+                                                      horizontal: 16),
+                                                  decoration: BoxDecoration(
+                                                    color: data['approved'] ==
+                                                            "accepted"
+                                                        ? Colors.green.shade600
+                                                            .withOpacity(0.12)
+                                                        : Colors.red.shade600
+                                                            .withOpacity(0.12),
+                                                    borderRadius:
+                                                        const BorderRadius
+                                                            .vertical(
+                                                      bottom:
+                                                          Radius.circular(16),
+                                                    ),
+                                                    border: Border(
+                                                      left: BorderSide(
+                                                        color: data['approved'] ==
+                                                                "accepted"
+                                                            ? Colors
+                                                                .green.shade600
+                                                                .withOpacity(
+                                                                    0.5)
+                                                            : Colors
+                                                                .red.shade600
+                                                                .withOpacity(
+                                                                    0.5),
+                                                        width: 3,
+                                                      ),
+                                                      bottom: BorderSide(
+                                                        color: data['approved'] ==
+                                                                "accepted"
+                                                            ? Colors
+                                                                .green.shade600
+                                                                .withOpacity(
+                                                                    0.5)
+                                                            : Colors
+                                                                .red.shade600
+                                                                .withOpacity(
+                                                                    0.5),
+                                                        width: 1.5,
+                                                      ),
+                                                      right: BorderSide(
+                                                        color: data['approved'] ==
+                                                                "accepted"
+                                                            ? Colors
+                                                                .green.shade600
+                                                                .withOpacity(
+                                                                    0.5)
+                                                            : Colors
+                                                                .red.shade600
+                                                                .withOpacity(
+                                                                    0.5),
+                                                        width: 1.5,
+                                                      ),
+                                                    ),
+                                                  ),
+                                                  child: Row(
+                                                    children: [
+                                                      Container(
+                                                        padding:
+                                                            EdgeInsets.all(6),
+                                                        decoration:
+                                                            BoxDecoration(
+                                                          color: data['approved'] ==
+                                                                  "accepted"
+                                                              ? Colors.green
+                                                                  .shade600
+                                                                  .withOpacity(
+                                                                      0.2)
+                                                              : Colors
+                                                                  .red.shade600
+                                                                  .withOpacity(
+                                                                      0.2),
+                                                          shape:
+                                                              BoxShape.circle,
+                                                        ),
+                                                        child: Text(
+                                                          data['approved'] ==
+                                                                  "accepted"
+                                                              ? "✅"
+                                                              : "❌",
+                                                          style: TextStyle(
+                                                              fontSize: 14),
+                                                        ),
+                                                      ),
+                                                      SizedBox(width: 12),
+                                                      Text(
+                                                        data['approved'] ==
+                                                                "accepted"
+                                                            ? "Flyer Approved"
+                                                            : "Flyer Declined",
+                                                        style: TextStyle(
+                                                          color:
+                                                              data['approved'] ==
+                                                                      "accepted"
+                                                                  ? Colors.green
+                                                                      .shade700
+                                                                  : Colors.red
+                                                                      .shade700,
+                                                          fontWeight:
+                                                              FontWeight.bold,
+                                                          fontSize: 15,
+                                                        ),
+                                                      ),
+                                                    ],
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
+                                        ),
+                                      if (data['textMessage']?.isNotEmpty ==
+                                          true)
+                                        Container(
+                                          margin: const EdgeInsets.only(top: 4),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 12,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: isMe
+                                                ? const Color(0xFF0084FF)
+                                                : Colors.white,
+                                            borderRadius: BorderRadius.only(
+                                              topLeft:
+                                                  const Radius.circular(20),
+                                              topRight:
+                                                  const Radius.circular(20),
+                                              bottomLeft: Radius.circular(
+                                                  isMe ? 20 : 4),
+                                              bottomRight: Radius.circular(
+                                                  isMe ? 4 : 20),
+                                            ),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: Colors.black
+                                                    .withOpacity(0.05),
+                                                blurRadius: 10,
+                                                offset: const Offset(0, 5),
+                                              ),
+                                            ],
+                                          ),
+                                          child: Text(
+                                            data['textMessage'],
+                                            style: TextStyle(
+                                              color: isMe
+                                                  ? Colors.white
+                                                  : Colors.black87,
+                                              fontSize: 16,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          );
+                        },
+                      );
+                    },
+                  ),
+                ),
+                // Update the selected image preview
+                if (_selectedImage != null || _projectBase64 != null)
+                  Container(
+                    margin: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.1),
+                          blurRadius: 10,
+                          offset: const Offset(0, 5),
+                        ),
+                      ],
+                    ),
+                    child: Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxHeight:
+                                  MediaQuery.of(context).size.height * 0.4,
+                            ),
+                            child: kIsWeb
+                                ? Image.memory(
+                                    base64Decode(_projectBase64!),
+                                    width: double.infinity,
+                                    fit: BoxFit.contain,
+                                  )
+                                : Image.file(
+                                    _selectedImage!,
+                                    width: double.infinity,
+                                    fit: BoxFit.contain,
+                                  ),
+                          ),
+                        ),
+                        Positioned(
+                          right: 8,
+                          top: 8,
+                          child: GestureDetector(
+                            onTap: _clearImage,
+                            child: Container(
+                              padding: const EdgeInsets.all(8),
+                              decoration: BoxDecoration(
+                                color: Colors.black.withOpacity(0.6),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.close,
+                                color: Colors.white,
+                                size: 20,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 10,
+                        offset: const Offset(0, -5),
+                      ),
+                    ],
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 12,
+                  ),
+                  child: Row(
+                    children: [
+                      _UploadButton(
+                        onTap: _isUploading ? null : _uploadProject,
+                        isUploading: _isUploading,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: Colors.grey[100],
+                            borderRadius: BorderRadius.circular(24),
+                          ),
+                          child: TextField(
+                            controller: _controller,
+                            decoration: const InputDecoration(
+                              hintText: "Message...",
+                              border: InputBorder.none,
+                              contentPadding: EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        'Discussing Post: ${widget.postContext!['title']}',
-                        style: const TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.black87,
+                      const SizedBox(width: 12),
+                      Container(
+                        decoration: const BoxDecoration(
+                          color: Color(0xFF0084FF),
+                          shape: BoxShape.circle,
+                        ),
+                        child: IconButton(
+                          icon: const Icon(Icons.send, color: Colors.white),
+                          onPressed: _sendMessage,
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ));
+  }
+}
+
+class _TypingIndicator extends StatefulWidget {
+  const _TypingIndicator({Key? key}) : super(key: key);
+
+  @override
+  State<_TypingIndicator> createState() => _TypingIndicatorState();
+}
+
+class _TypingIndicatorState extends State<_TypingIndicator>
+    with TickerProviderStateMixin {
+  late AnimationController _controller;
+  late List<Animation<double>> _animations;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      duration: const Duration(milliseconds: 1500),
+      vsync: this,
+    );
+
+    _animations = List.generate(3, (index) {
+      return Tween<double>(
+        begin: 0.0,
+        end: 1.0,
+      ).animate(
+        CurvedAnimation(
+          parent: _controller,
+          curve: Interval(
+            index * 0.2,
+            0.6 + index * 0.2,
+            curve: Curves.easeInOut,
+          ),
+        ),
+      );
+    });
+
+    _controller.repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(left: 16, right: 64, bottom: 8),
+      child: Align(
+        alignment: Alignment.centerLeft,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: const BorderRadius.only(
+              topLeft: Radius.circular(20),
+              topRight: Radius.circular(20),
+              bottomLeft: Radius.circular(4),
+              bottomRight: Radius.circular(20),
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, 5),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Typing',
+                style: TextStyle(
+                  color: Colors.grey[600],
+                  fontSize: 14,
+                  fontStyle: FontStyle.italic,
                 ),
               ),
-            Expanded(
-              child: StreamBuilder<QuerySnapshot>(
-                stream: _firestore
-                    .collection('conversations')
-                    .doc(_chatId)
-                    .collection('messages')
-                    .orderBy('timestamp', descending: true)
-                    .limit(50)
-                    .snapshots(),
-                builder: (context, snapshot) {
-                  print('Stream update for chatId: $_chatId');
-                  print('Connection state: ${snapshot.connectionState}');
-                  print('Has data: ${snapshot.hasData}');
-                  if (snapshot.connectionState == ConnectionState.waiting) {
-                    return const Center(child: CircularProgressIndicator());
-                  }
-                  final messages = snapshot.data?.docs ?? [];
-                  print('Messages received: ${messages.length}');
-
-                  return ListView.builder(
-                    controller: _scrollController,
-                    reverse: true,
-                    itemCount: messages.length,
-                    padding: const EdgeInsets.symmetric(vertical: 16),
-                    itemBuilder: (context, index) {
-                      final data =
-                          messages[index].data() as Map<String, dynamic>;
-                      final isMe = data['senderId'] == _currentUser!.uid;
-                      final senderId = data['senderId'];
-
-                      return Align(
-                        alignment:
-                            isMe ? Alignment.centerRight : Alignment.centerLeft,
-                        child: Padding(
-                          padding: EdgeInsets.only(
-                            left: isMe ? 64 : 16,
-                            right: isMe ? 16 : 64,
-                            bottom: 8,
-                          ),
-                          child: Column(
-                            crossAxisAlignment: isMe
-                                ? CrossAxisAlignment.end
-                                : CrossAxisAlignment.start,
-                            children: [
-                              if (data['final_project'] != null)
-                                Container(
-                                  decoration: BoxDecoration(
-                                    color: Colors.white,
-                                    borderRadius: BorderRadius.circular(16),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black.withOpacity(0.05),
-                                        blurRadius: 10,
-                                        offset: const Offset(0, 5),
-                                      ),
-                                    ],
-                                  ),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      GestureDetector(
-                                        onTap: () {
-                                          Navigator.push(
-                                            context,
-                                            MaterialPageRoute(
-                                              builder: (context) => ImageViewer(
-                                                imageBase64:
-                                                    data['final_project'],
-                                                tag:
-                                                    'project-${messages[index].id}',
-                                              ),
-                                            ),
-                                          );
-                                        },
-                                        child: Hero(
-                                          tag: 'project-${messages[index].id}',
-                                          child: ClipRRect(
-                                            borderRadius:
-                                                const BorderRadius.vertical(
-                                              top: Radius.circular(16),
-                                            ),
-                                            child: ConstrainedBox(
-                                              constraints: BoxConstraints(
-                                                maxWidth: MediaQuery.of(context)
-                                                        .size
-                                                        .width *
-                                                    0.8,
-                                                maxHeight:
-                                                    MediaQuery.of(context)
-                                                            .size
-                                                            .height *
-                                                        0.4,
-                                              ),
-                                              child: Image.memory(
-                                                base64Decode(
-                                                    data['final_project']),
-                                                fit: BoxFit.contain,
-                                              ),
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                      if (!isMe && data['approved'] == null)
-                                        Padding(
-                                          padding: const EdgeInsets.all(12),
-                                          child: Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            mainAxisAlignment:
-                                                MainAxisAlignment.start,
-                                            children: [
-                                              _ActionButton(
-                                                onPressed: () =>
-                                                    _handleApproval(
-                                                  false,
-                                                  messages[index].id,
-                                                  senderId,
-                                                ),
-                                                text: "Decline",
-                                                color: Colors.red.shade600,
-                                                isApprove: false,
-                                              ),
-                                              const SizedBox(width: 28),
-                                              _ActionButton(
-                                                onPressed: () =>
-                                                    _handleApproval(
-                                                  true,
-                                                  messages[index].id,
-                                                  senderId,
-                                                ),
-                                                text: "Approve",
-                                                color: Colors.green.shade600,
-                                                isApprove: true,
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                      if (data['approved'] != null)
-                                        Container(
-                                          width: double.infinity,
-                                          padding: const EdgeInsets.symmetric(
-                                              vertical: 12, horizontal: 16),
-                                          decoration: BoxDecoration(
-                                            color:
-                                                data['approved'] == "accepted"
-                                                    ? Colors.green.shade600
-                                                        .withOpacity(0.12)
-                                                    : Colors.red.shade600
-                                                        .withOpacity(0.12),
-                                            borderRadius:
-                                                const BorderRadius.vertical(
-                                              bottom: Radius.circular(16),
-                                            ),
-                                            border: Border(
-                                              left: BorderSide(
-                                                color: data['approved'] ==
-                                                        "accepted"
-                                                    ? Colors.green.shade600
-                                                        .withOpacity(0.5)
-                                                    : Colors.red.shade600
-                                                        .withOpacity(0.5),
-                                                width: 3,
-                                              ),
-                                              bottom: BorderSide(
-                                                color: data['approved'] ==
-                                                        "accepted"
-                                                    ? Colors.green.shade600
-                                                        .withOpacity(0.5)
-                                                    : Colors.red.shade600
-                                                        .withOpacity(0.5),
-                                                width: 1.5,
-                                              ),
-                                              right: BorderSide(
-                                                color: data['approved'] ==
-                                                        "accepted"
-                                                    ? Colors.green.shade600
-                                                        .withOpacity(0.5)
-                                                    : Colors.red.shade600
-                                                        .withOpacity(0.5),
-                                                width: 1.5,
-                                              ),
-                                            ),
-                                          ),
-                                          child: Row(
-                                            children: [
-                                              Container(
-                                                padding: EdgeInsets.all(6),
-                                                decoration: BoxDecoration(
-                                                  color: data['approved'] ==
-                                                          "accepted"
-                                                      ? Colors.green.shade600
-                                                          .withOpacity(0.2)
-                                                      : Colors.red.shade600
-                                                          .withOpacity(0.2),
-                                                  shape: BoxShape.circle,
-                                                ),
-                                                child: Text(
-                                                  data['approved'] == "accepted"
-                                                      ? "✅"
-                                                      : "❌",
-                                                  style:
-                                                      TextStyle(fontSize: 14),
-                                                ),
-                                              ),
-                                              SizedBox(width: 12),
-                                              Text(
-                                                data['approved'] == "accepted"
-                                                    ? "Flyer Approved"
-                                                    : "Flyer Declined",
-                                                style: TextStyle(
-                                                  color: data['approved'] ==
-                                                          "accepted"
-                                                      ? Colors.green.shade700
-                                                      : Colors.red.shade700,
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 15,
-                                                ),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                              if (data['textMessage']?.isNotEmpty == true)
-                                Container(
-                                  margin: const EdgeInsets.only(top: 4),
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 16,
-                                    vertical: 12,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: isMe
-                                        ? const Color(0xFF0084FF)
-                                        : Colors.white,
-                                    borderRadius: BorderRadius.only(
-                                      topLeft: const Radius.circular(20),
-                                      topRight: const Radius.circular(20),
-                                      bottomLeft:
-                                          Radius.circular(isMe ? 20 : 4),
-                                      bottomRight:
-                                          Radius.circular(isMe ? 4 : 20),
-                                    ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black.withOpacity(0.05),
-                                        blurRadius: 10,
-                                        offset: const Offset(0, 5),
-                                      ),
-                                    ],
-                                  ),
-                                  child: Text(
-                                    data['textMessage'],
-                                    style: TextStyle(
-                                      color:
-                                          isMe ? Colors.white : Colors.black87,
-                                      fontSize: 16,
-                                    ),
-                                  ),
-                                ),
-                            ],
+              const SizedBox(width: 8),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: List.generate(3, (index) {
+                  return AnimatedBuilder(
+                    animation: _animations[index],
+                    builder: (context, child) {
+                      return Container(
+                        margin: const EdgeInsets.symmetric(horizontal: 1),
+                        child: Transform.translate(
+                          offset: Offset(0, -4 * _animations[index].value),
+                          child: Container(
+                            width: 6,
+                            height: 6,
+                            decoration: BoxDecoration(
+                              color: Colors.grey[400],
+                              shape: BoxShape.circle,
+                            ),
                           ),
                         ),
                       );
                     },
                   );
-                },
+                }),
               ),
-            ),
-            // Update the selected image preview
-            if (_selectedImage != null || _projectBase64 != null)
-              Container(
-                margin: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.1),
-                      blurRadius: 10,
-                      offset: const Offset(0, 5),
-                    ),
-                  ],
-                ),
-                child: Stack(
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxHeight: MediaQuery.of(context).size.height * 0.4,
-                        ),
-                        child: kIsWeb
-                            ? Image.memory(
-                                base64Decode(_projectBase64!),
-                                width: double.infinity,
-                                fit: BoxFit.contain,
-                              )
-                            : Image.file(
-                                _selectedImage!,
-                                width: double.infinity,
-                                fit: BoxFit.contain,
-                              ),
-                      ),
-                    ),
-                    Positioned(
-                      right: 8,
-                      top: 8,
-                      child: GestureDetector(
-                        onTap: _clearImage,
-                        child: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: Colors.black.withOpacity(0.6),
-                            shape: BoxShape.circle,
-                          ),
-                          child: const Icon(
-                            Icons.close,
-                            color: Colors.white,
-                            size: 20,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, -5),
-                  ),
-                ],
-              ),
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16,
-                vertical: 12,
-              ),
-              child: Row(
-                children: [
-                  _UploadButton(
-                    onTap: _isUploading ? null : _uploadProject,
-                    isUploading: _isUploading,
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        color: Colors.grey[100],
-                        borderRadius: BorderRadius.circular(24),
-                      ),
-                      child: TextField(
-                        controller: _controller,
-                        decoration: const InputDecoration(
-                          hintText: "Message...",
-                          border: InputBorder.none,
-                          contentPadding: EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 12,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Container(
-                    decoration: const BoxDecoration(
-                      color: Color(0xFF0084FF),
-                      shape: BoxShape.circle,
-                    ),
-                    child: IconButton(
-                      icon: const Icon(Icons.send, color: Colors.white),
-                      onPressed: _sendMessage,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

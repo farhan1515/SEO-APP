@@ -78,6 +78,11 @@ service cloud.firestore {
       allow read, write: if request.auth != null;
     }
 
+    // Rules for typing status
+    match /typing_status/{chatId} {
+      allow read, write: if request.auth != null;
+    }
+
     // Default rule for other collections
     match /{document=**} {
       allow read, write: if false;  // Deny by default for security

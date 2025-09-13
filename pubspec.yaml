@@ -2,7 +2,7 @@ name: seo_app
 description: "SEO Credit"
 publish_to: "none"
 
-version: 1.0.0+6
+version: 1.0.0+8
 
 environment:
   sdk: ^3.7.0-41.0.dev
@@ -45,6 +45,7 @@ dependencies:
   image: ^4.2.0
   flutter_dotenv: ^5.1.0
   cloud_functions: ^5.6.1
+  shared_preferences: ^2.2.2
 
 dev_dependencies:
   flutter_test:

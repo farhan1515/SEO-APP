@@ -344,21 +344,21 @@ class _HomeScreenState extends State<HomeScreen>
                       ),
                       Row(
                         children: [
-                          IconButton(
-                            icon: const Icon(SolarIconsOutline.heart),
-                            onPressed: () => Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                  builder: (context) =>
-                                      PendingApprovalsScreen()),
-                            ),
-                            color: Colors.black,
-                            iconSize: 20,
-                            constraints: const BoxConstraints(
-                              minWidth: 36,
-                              minHeight: 36,
-                            ),
-                          ),
+                          // IconButton(
+                          //   icon: const Icon(SolarIconsOutline.heart),
+                          //   onPressed: () => Navigator.push(
+                          //     context,
+                          //     MaterialPageRoute(
+                          //         builder: (context) =>
+                          //             PendingApprovalsScreen()),
+                          //   ),
+                          //   color: Colors.black,
+                          //   iconSize: 20,
+                          //   constraints: const BoxConstraints(
+                          //     minWidth: 36,
+                          //     minHeight: 36,
+                          //   ),
+                          // ),
                           IconButton(
                             icon: const Icon(SolarIconsOutline.settings),
                             onPressed: () => Navigator.push(
@@ -660,15 +660,15 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
                 Row(
                   children: [
-                    IconButton(
-                      icon: const Icon(SolarIconsOutline.heart),
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (context) => PendingApprovalsScreen()),
-                      ),
-                      color: Colors.black,
-                    ),
+                    // IconButton(
+                    //   icon: const Icon(SolarIconsOutline.heart),
+                    //   onPressed: () => Navigator.push(
+                    //     context,
+                    //     MaterialPageRoute(
+                    //         builder: (context) => PendingApprovalsScreen()),
+                    //   ),
+                    //   color: Colors.black,
+                    // ),
                     IconButton(
                       icon: const Icon(SolarIconsOutline.settings),
                       onPressed: () => Navigator.push(

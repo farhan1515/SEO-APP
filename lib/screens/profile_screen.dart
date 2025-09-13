@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:seo_app/screens/add_profile_screen.dart';
-import 'package:seo_app/screens/dashboard_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:seo_app/screens/main_screen.dart';
 import 'package:seo_app/screens/settings_screen.dart';
 import 'package:seo_app/theme/text_style.dart';
 import 'package:solar_icons/solar_icons.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:async';
+import 'dart:convert';
 
 class ProfileScreen extends StatefulWidget {
   final String userId;
@@ -25,7 +25,6 @@ class ProfileScreen extends StatefulWidget {
 class _ProfileScreenState extends State<ProfileScreen> {
   int _currentStep = 0;
   final _formKey = GlobalKey<FormState>();
-  double _completionPercentage = 0;
 
   // Form controllers
   final _businessNameController = TextEditingController();
@@ -45,43 +44,192 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   // Contact controllers
   List<Contact> contacts = [Contact()];
-  bool _receiveAlerts = false;
-  bool _emailNotifications = false;
 
   String? selectedCountry;
   String? selectedTimeZone;
 
+  // Auto-save related variables
+  Timer? _debounceTimer;
+  bool _isAutoSaving = false;
+  DateTime? _lastSaveTime;
+  late SharedPreferences _prefs;
+  String get _autoSaveKey =>
+      'profile_autosave_${widget.userId}_${widget.profileId ?? 'new'}';
+
   void _updateProgress() {
-    int filledFields = 0;
-    final totalFields = 18; // Total fields across all steps
+    // This method can be used for future progress tracking if needed
+    setState(() {
+      // Trigger UI update
+    });
+  }
 
-    // Check business details
-    if (_businessNameController.text.isNotEmpty) filledFields++;
-    if (_businessTypeController.text.isNotEmpty) filledFields++;
-    if (_phoneController.text.isNotEmpty) filledFields++;
-    if (_addressController.text.isNotEmpty) filledFields++;
-    if (selectedCountry != null) filledFields++;
-    if (_zipController.text.isNotEmpty) filledFields++;
-    if (selectedTimeZone != null) filledFields++;
-    if (_websiteController.text.isNotEmpty) filledFields++;
-    if (_gstController.text.isNotEmpty) filledFields++;
+  // Auto-save functionality
+  void _triggerAutoSave() {
+    // Cancel any existing timer
+    _debounceTimer?.cancel();
 
-    // Check social media
-    if (_facebookController.text.isNotEmpty) filledFields++;
-    if (_instagramController.text.isNotEmpty) filledFields++;
-    if (_googleBusinessController.text.isNotEmpty) filledFields++;
-    if (_whatsappController.text.isNotEmpty) filledFields++;
-    if (_telegramController.text.isNotEmpty) filledFields++;
+    // Set up a new timer with 2-second delay
+    _debounceTimer = Timer(const Duration(seconds: 2), () {
+      _autoSaveFormData();
+    });
+  }
 
-    // Check contacts
-    for (var contact in contacts) {
-      if (contact.name.isNotEmpty) filledFields++;
-      if (contact.email.isNotEmpty) filledFields++;
-    }
+  Future<void> _autoSaveFormData() async {
+    if (!mounted) return;
 
     setState(() {
-      _completionPercentage = (filledFields / totalFields) * 100;
+      _isAutoSaving = true;
     });
+
+    try {
+      final autoSaveData = {
+        'currentStep': _currentStep,
+        'businessDetails': {
+          'name': _businessNameController.text,
+          'type': _businessTypeController.text,
+          'phone': _phoneController.text,
+          'address': _addressController.text,
+          'country': selectedCountry,
+          'zip': _zipController.text,
+          'timeZone': selectedTimeZone,
+          'website': _websiteController.text,
+          'gstNumber': _gstController.text,
+        },
+        'socialMedia': {
+          'facebook': _facebookController.text,
+          'instagram': _instagramController.text,
+          'googleBusiness': _googleBusinessController.text,
+          'whatsapp': _whatsappController.text,
+          'telegram': _telegramController.text,
+        },
+        'contacts': contacts
+            .map((contact) => {
+                  'name': contact.name,
+                  'email': contact.email,
+                  'isPrimary': contact.isPrimary,
+                  'receiveAlerts': contact.receiveAlerts,
+                  'emailNotifications': contact.emailNotifications,
+                })
+            .toList(),
+        'lastSaved': DateTime.now().toIso8601String(),
+      };
+
+      await _prefs.setString(_autoSaveKey, jsonEncode(autoSaveData));
+
+      if (mounted) {
+        setState(() {
+          _isAutoSaving = false;
+          _lastSaveTime = DateTime.now();
+        });
+      }
+    } catch (e) {
+      print('Error auto-saving: $e');
+      if (mounted) {
+        setState(() {
+          _isAutoSaving = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadAutoSavedData() async {
+    try {
+      final autoSavedJson = _prefs.getString(_autoSaveKey);
+      if (autoSavedJson != null) {
+        final autoSavedData = jsonDecode(autoSavedJson) as Map<String, dynamic>;
+
+        // Load current step
+        _currentStep = autoSavedData['currentStep'] ?? 0;
+
+        // Load business details
+        final businessDetails =
+            autoSavedData['businessDetails'] as Map<String, dynamic>? ?? {};
+        _businessNameController.text = businessDetails['name'] ?? '';
+        _businessTypeController.text = businessDetails['type'] ?? '';
+        _phoneController.text = businessDetails['phone'] ?? '';
+        _addressController.text = businessDetails['address'] ?? '';
+        selectedCountry = businessDetails['country'];
+        _zipController.text = businessDetails['zip'] ?? '';
+        selectedTimeZone = businessDetails['timeZone'];
+        _websiteController.text = businessDetails['website'] ?? '';
+        _gstController.text = businessDetails['gstNumber'] ?? '';
+
+        // Load social media
+        final socialMedia =
+            autoSavedData['socialMedia'] as Map<String, dynamic>? ?? {};
+        _facebookController.text = socialMedia['facebook'] ?? '';
+        _instagramController.text = socialMedia['instagram'] ?? '';
+        _googleBusinessController.text = socialMedia['googleBusiness'] ?? '';
+        _whatsappController.text = socialMedia['whatsapp'] ?? '';
+        _telegramController.text = socialMedia['telegram'] ?? '';
+
+        // Load contacts
+        final contactsData = autoSavedData['contacts'] as List<dynamic>? ?? [];
+        if (contactsData.isNotEmpty) {
+          contacts = contactsData.map((contactData) {
+            final contact = Contact();
+            contact.name = contactData['name'] ?? '';
+            contact.email = contactData['email'] ?? '';
+            contact.isPrimary = contactData['isPrimary'] ?? false;
+            contact.receiveAlerts = contactData['receiveAlerts'] ?? false;
+            contact.emailNotifications =
+                contactData['emailNotifications'] ?? false;
+            contact.nameController = TextEditingController(text: contact.name);
+            contact.emailController =
+                TextEditingController(text: contact.email);
+            return contact;
+          }).toList();
+        }
+
+        // Parse last saved time
+        final lastSavedString = autoSavedData['lastSaved'] as String?;
+        if (lastSavedString != null) {
+          _lastSaveTime = DateTime.parse(lastSavedString);
+        }
+
+        // Update progress and UI
+        _updateProgress();
+
+        // Show snackbar about restored data
+        if (mounted) {
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Row(
+                    children: [
+                      Icon(SolarIconsOutline.clockCircle,
+                          color: Colors.white, size: 16),
+                      SizedBox(width: 8),
+                      Text(
+                        'Previous progress restored',
+                        style: mont.copyWith(fontSize: 14, color: Colors.white),
+                      ),
+                    ],
+                  ),
+                  backgroundColor: Color(0xFF5664F5),
+                  behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                  duration: Duration(seconds: 3),
+                ),
+              );
+            }
+          });
+        }
+      }
+    } catch (e) {
+      print('Error loading auto-saved data: $e');
+    }
+  }
+
+  Future<void> _clearAutoSavedData() async {
+    try {
+      await _prefs.remove(_autoSaveKey);
+      _lastSaveTime = null;
+    } catch (e) {
+      print('Error clearing auto-saved data: $e');
+    }
   }
 
   Future<void> _fetchProfileData() async {
@@ -147,13 +295,123 @@ class _ProfileScreenState extends State<ProfileScreen> {
   @override
   void initState() {
     super.initState();
+    _initializePreferences();
+  }
+
+  Future<void> _initializePreferences() async {
+    _prefs = await SharedPreferences.getInstance();
+
+    // If editing existing profile, fetch from Firebase first
     if (widget.profileId != null) {
-      _fetchProfileData();
+      await _fetchProfileData();
+    } else {
+      // For new profiles, try to load auto-saved data
+      await _loadAutoSavedData();
     }
+
+    // Setup listeners for all controllers to trigger auto-save
+    _setupAutoSaveListeners();
+  }
+
+  void _setupAutoSaveListeners() {
+    // Business details listeners
+    _businessNameController.addListener(_triggerAutoSave);
+    _businessTypeController.addListener(_triggerAutoSave);
+    _phoneController.addListener(_triggerAutoSave);
+    _addressController.addListener(_triggerAutoSave);
+    _zipController.addListener(_triggerAutoSave);
+    _websiteController.addListener(_triggerAutoSave);
+    _gstController.addListener(_triggerAutoSave);
+
+    // Social media listeners
+    _facebookController.addListener(_triggerAutoSave);
+    _instagramController.addListener(_triggerAutoSave);
+    _googleBusinessController.addListener(_triggerAutoSave);
+    _whatsappController.addListener(_triggerAutoSave);
+    _telegramController.addListener(_triggerAutoSave);
+
+    // Contact controllers will be set up when contacts are created/loaded
+    _setupContactListeners();
+  }
+
+  void _setupContactListeners() {
+    for (final contact in contacts) {
+      contact.nameController
+          .removeListener(_triggerAutoSave); // Remove if exists
+      contact.emailController
+          .removeListener(_triggerAutoSave); // Remove if exists
+      contact.nameController.addListener(_triggerAutoSave);
+      contact.emailController.addListener(_triggerAutoSave);
+    }
+  }
+
+  Widget _buildAutoSaveIndicator() {
+    final isSmallScreen = MediaQuery.of(context).size.width < 400;
+
+    if (_isAutoSaving) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: isSmallScreen ? 10 : 12,
+            height: isSmallScreen ? 10 : 12,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF5664F5)),
+            ),
+          ),
+          SizedBox(width: isSmallScreen ? 3 : 4),
+          Text(
+            'Saving...',
+            style: mont.copyWith(
+              color: Color(0xFF5664F5),
+              fontSize: isSmallScreen ? 10 : 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      );
+    } else if (_lastSaveTime != null) {
+      final now = DateTime.now();
+      final difference = now.difference(_lastSaveTime!);
+      String timeText;
+
+      if (difference.inSeconds < 60) {
+        timeText = isSmallScreen ? 'Saved now' : 'Saved just now';
+      } else if (difference.inMinutes < 60) {
+        timeText = 'Saved ${difference.inMinutes}m ago';
+      } else {
+        timeText = 'Saved ${difference.inHours}h ago';
+      }
+
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            SolarIconsOutline.checkCircle,
+            size: isSmallScreen ? 10 : 12,
+            color: Colors.green,
+          ),
+          SizedBox(width: isSmallScreen ? 3 : 4),
+          Text(
+            timeText,
+            style: mont.copyWith(
+              color: Colors.green,
+              fontSize: isSmallScreen ? 10 : 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      );
+    }
+    return SizedBox.shrink();
   }
 
   @override
   void dispose() {
+    // Cancel auto-save timer
+    _debounceTimer?.cancel();
+
     // Dispose business details controllers
     _businessNameController.dispose();
     _businessTypeController.dispose();
@@ -240,6 +498,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       setState(() {
         _currentStep++;
       });
+      // Trigger auto-save when step changes
+      _triggerAutoSave();
     } else {
       // If on the last step, submit the form
       _submitForm();
@@ -251,8 +511,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     final user = FirebaseAuth.instance.currentUser; // Get the current user
     final displayName =
         user?.displayName ?? 'U'; // Default to 'U' if name is null
-    final firstLetter =
-        displayName.isNotEmpty ? displayName[0] : 'U'; // Get the first letter
+
     final String? photoURL = user?.photoURL;
     return Scaffold(
       backgroundColor: Colors.green,
@@ -300,7 +559,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                           const SizedBox(width: 12),
                           Text(
-                            'Hi, ${displayName?.split(' ')[0] ?? 'User'}!',
+                            'Hi, ${displayName.split(' ')[0]}!',
                             style: mont.copyWith(
                               fontSize: 18,
                               color: Colors.black,
@@ -310,11 +569,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                       Row(
                         children: [
-                          IconButton(
-                            icon: Icon(SolarIconsOutline.heart),
-                            onPressed: () {},
-                            color: Colors.black,
-                          ),
+                          // IconButton(
+                          //   icon: Icon(SolarIconsOutline.heart),
+                          //   onPressed: () {},
+                          //   color: Colors.black,
+                          // ),
                           IconButton(
                             icon: Icon(SolarIconsOutline.settings),
                             onPressed: () {
@@ -340,55 +599,111 @@ class _ProfileScreenState extends State<ProfileScreen> {
               right: 0,
               child: Padding(
                 padding: const EdgeInsets.only(top: 40),
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: Color(0xFFD3BDFC),
-                    borderRadius: BorderRadius.only(
-                      bottomLeft: Radius.circular(20),
-                      bottomRight: Radius.circular(20),
+                child: SizedBox(
+                  width: double.infinity,
+                  child: Container(
+                    padding: EdgeInsets.symmetric(
+                      horizontal:
+                          MediaQuery.of(context).size.width < 400 ? 12 : 16,
+                      vertical: 8,
                     ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                            children: [
-                              Text(
-                                'Profile',
-                                style: mont.copyWith(
-                                    color: Color(0xFF3E1885),
-                                    fontSize: 24,
-                                    fontWeight: FontWeight.bold),
-                              ),
-                              const SizedBox(height: 4),
-                              Text(
-                                'Complete  Profile for best experience',
-                                style: mont.copyWith(
-                                    color: Color(0xFF3E1885),
-                                    fontSize: 15,
-                                    fontWeight: FontWeight.w300),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ],
-                          ),
-                          IconButton(
-                            icon: Icon(
-                              Icons.info_outline,
-                              color: Color(0xFF3E1885),
-                            ),
-                            onPressed: () {},
-                          ),
-                        ],
+                    decoration: BoxDecoration(
+                      color: Color(0xFFD3BDFC),
+                      borderRadius: BorderRadius.only(
+                        bottomLeft: Radius.circular(20),
+                        bottomRight: Radius.circular(20),
                       ),
-                    ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          children: [
+                            IconButton(
+                              icon: Icon(
+                                Icons
+                                    .arrow_back_ios_rounded, // Sleek back arrow icon
+                                color: Color(0xFF3E1885),
+                                size: 20,
+                              ),
+                              onPressed: () {
+                                Navigator.pop(context);
+                              },
+                            ),
+                            Flexible(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                mainAxisAlignment: MainAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    'Profile',
+                                    style: mont.copyWith(
+                                        color: Color(0xFF3E1885),
+                                        fontSize:
+                                            MediaQuery.of(context).size.width <
+                                                    400
+                                                ? 20
+                                                : 24,
+                                        fontWeight: FontWeight.bold),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        'Complete Profile for best experience',
+                                        style: mont.copyWith(
+                                            color: Color(0xFF3E1885),
+                                            fontSize: MediaQuery.of(context)
+                                                        .size
+                                                        .width <
+                                                    400
+                                                ? 13
+                                                : 15,
+                                            fontWeight: FontWeight.w300),
+                                        overflow: TextOverflow.ellipsis,
+                                        maxLines: 2,
+                                      ),
+                                      if (_isAutoSaving ||
+                                          _lastSaveTime != null) ...[
+                                        SizedBox(height: 8),
+                                        _buildAutoSaveIndicator(),
+                                      ],
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            SizedBox(
+                                width: 8), // Add spacing between text and icon
+                            IconButton(
+                              icon: Icon(
+                                Icons.info_outline,
+                                color: Color(0xFF3E1885),
+                                size: MediaQuery.of(context).size.width < 400
+                                    ? 20
+                                    : 24,
+                              ),
+                              onPressed: () {},
+                              padding: EdgeInsets.zero,
+                              constraints: BoxConstraints(
+                                minWidth:
+                                    MediaQuery.of(context).size.width < 400
+                                        ? 32
+                                        : 48,
+                                minHeight:
+                                    MediaQuery.of(context).size.width < 400
+                                        ? 32
+                                        : 48,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -528,7 +843,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             style: sans.copyWith(fontSize: 16),
             controller: _businessNameController,
             decoration: getInputDecoration('Business Name', isRequired: true),
-            onChanged: (_) => _updateProgress(),
+            onChanged: (_) {
+              _updateProgress();
+            },
             validator: (value) {
               if (value == null || value.isEmpty) {
                 return 'Business Name is required';
@@ -548,7 +865,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
               }
               return null;
             },
-            onChanged: (_) => _updateProgress(),
+            onChanged: (_) {
+              _updateProgress();
+            },
           ),
           const SizedBox(height: 16),
           TextFormField(
@@ -563,7 +882,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
               return null;
             },
             keyboardType: TextInputType.phone,
-            onChanged: (_) => _updateProgress(),
+            onChanged: (_) {
+              _updateProgress();
+            },
           ),
           const SizedBox(height: 16),
           TextFormField(
@@ -577,7 +898,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
               return null;
             },
             maxLines: 2,
-            onChanged: (_) => _updateProgress(),
+            onChanged: (_) {
+              _updateProgress();
+            },
           ),
           const SizedBox(height: 16),
           DropdownButtonFormField<String>(
@@ -595,6 +918,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 selectedCountry = newValue;
               });
               _updateProgress();
+              _triggerAutoSave();
             },
             validator: (value) {
               if (value == null || value.isEmpty) {
@@ -616,7 +940,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
               return null;
             },
             keyboardType: TextInputType.number,
-            onChanged: (_) => _updateProgress(),
+            onChanged: (_) {
+              _updateProgress();
+            },
           ),
           const SizedBox(height: 16),
           DropdownButtonFormField<String>(
@@ -633,6 +959,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 selectedTimeZone = newValue;
               });
               _updateProgress();
+              _triggerAutoSave();
             },
             validator: (value) {
               if (value == null || value.isEmpty) {
@@ -654,7 +981,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
               return null;
             },
             keyboardType: TextInputType.url,
-            onChanged: (_) => _updateProgress(),
+            onChanged: (_) {
+              _updateProgress();
+            },
           ),
           const SizedBox(height: 16),
           TextFormField(
@@ -667,7 +996,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
               }
               return null;
             },
-            onChanged: (_) => _updateProgress(),
+            onChanged: (_) {
+              _updateProgress();
+            },
           ),
         ],
       ),
@@ -749,7 +1080,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   filled: true,
                   fillColor: Colors.grey[50],
                 ),
-                onChanged: (_) => _updateProgress(),
+                onChanged: (_) {
+                  _updateProgress();
+                },
               ),
             ),
             const SizedBox(width: 8), // Spacing between field and button
@@ -805,7 +1138,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   filled: true,
                   fillColor: Colors.grey[50],
                 ),
-                onChanged: (_) => _updateProgress(),
+                onChanged: (_) {
+                  _updateProgress();
+                },
               ),
             ),
             const SizedBox(width: 8), // Space between field and button
@@ -879,7 +1214,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                   filled: true,
                   fillColor: Colors.grey[50],
                 ),
-                onChanged: (_) => _updateProgress(),
+                onChanged: (_) {
+                  _updateProgress();
+                },
               ),
             ),
             const SizedBox(width: 8), // Space between field and button
@@ -1047,6 +1384,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           setState(() {
                             contact.isPrimary = value ?? false;
                           });
+                          _triggerAutoSave();
                         },
                       ),
                       Text('Is Primary Contact?',
@@ -1070,6 +1408,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           setState(() {
                             contact.receiveAlerts = value ?? false;
                           });
+                          _triggerAutoSave();
                         },
                       ),
                       Text('Receive Alerts',
@@ -1087,6 +1426,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           setState(() {
                             contact.emailNotifications = value ?? false;
                           });
+                          _triggerAutoSave();
                         },
                       ),
                       Text('Email Notifications',
@@ -1104,6 +1444,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           contacts.removeAt(index);
                         });
                         _updateProgress();
+                        _setupContactListeners(); // Refresh listeners
+                        _triggerAutoSave();
                       },
                       child: Text(
                         'Remove',
@@ -1122,6 +1464,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
             setState(() {
               contacts.add(Contact());
             });
+            _setupContactListeners(); // Setup listeners for new contact
+            _triggerAutoSave();
           },
           style: ElevatedButton.styleFrom(
             backgroundColor: Color(0xFF5664f5), // Blue Background
@@ -1349,6 +1693,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
             .doc(widget.profileId)
             .set(data, SetOptions(merge: true));
       }
+
+      // Clear auto-saved data after successful submission
+      await _clearAutoSavedData();
 
       // Show success message
       if (!mounted) return;

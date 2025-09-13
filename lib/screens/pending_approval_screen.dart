@@ -37,12 +37,22 @@ class _PendingApprovalsScreenState extends State<PendingApprovalsScreen>
     return MediaQuery.of(context).size.width <= 600;
   }
 
+  bool _isSmallMobile(BuildContext context) {
+    return MediaQuery.of(context).size.width <= 400;
+  }
+
+  bool _isVerySmallMobile(BuildContext context) {
+    return MediaQuery.of(context).size.width <= 320;
+  }
+
   // Get responsive padding
   EdgeInsets _getResponsivePadding(BuildContext context) {
     if (_isLargeScreen(context)) {
       return const EdgeInsets.symmetric(horizontal: 80, vertical: 32);
     } else if (_isTablet(context)) {
       return const EdgeInsets.symmetric(horizontal: 32, vertical: 24);
+    } else if (_isVerySmallMobile(context)) {
+      return const EdgeInsets.all(8); // Minimal padding for very small screens
     } else {
       return const EdgeInsets.all(16);
     }
@@ -55,6 +65,8 @@ class _PendingApprovalsScreenState extends State<PendingApprovalsScreen>
       return min(800, screenWidth * 0.6);
     } else if (_isTablet(context)) {
       return min(600, screenWidth * 0.8);
+    } else if (_isVerySmallMobile(context)) {
+      return screenWidth - 16; // Smaller padding for very small screens
     } else {
       return screenWidth - 32;
     }
@@ -79,6 +91,19 @@ class _PendingApprovalsScreenState extends State<PendingApprovalsScreen>
       return 180;
     } else {
       return 160;
+    }
+  }
+
+  // Get responsive button spacing
+  double _getButtonSpacing(BuildContext context) {
+    if (_isVerySmallMobile(context)) {
+      return 8;
+    } else if (_isSmallMobile(context)) {
+      return 10;
+    } else if (_isLargeScreen(context)) {
+      return 16;
+    } else {
+      return 12;
     }
   }
 
@@ -487,7 +512,8 @@ class _PendingApprovalsScreenState extends State<PendingApprovalsScreen>
                         padding: _getResponsivePadding(context),
                         itemCount: posts.length,
                         itemBuilder: (context, index) {
-                          final post = posts[index].data() as Map<String, dynamic>;
+                          final post =
+                              posts[index].data() as Map<String, dynamic>;
                           final postId = posts[index].id;
 
                           // Create a staggered animation effect
@@ -497,7 +523,8 @@ class _PendingApprovalsScreenState extends State<PendingApprovalsScreen>
                               parent: _animationController,
                               curve: Interval(
                                 (index / posts.length) * 0.5,
-                                min(1.0, ((index + 1) / posts.length) * 0.5 + 0.5),
+                                min(1.0,
+                                    ((index + 1) / posts.length) * 0.5 + 0.5),
                                 curve: Curves.easeOut,
                               ),
                             ),
@@ -701,7 +728,11 @@ class _PendingApprovalsScreenState extends State<PendingApprovalsScreen>
 
           // Action buttons
           Container(
-            padding: EdgeInsets.all(_isLargeScreen(context) ? 20 : 16),
+            padding: EdgeInsets.all(_isVerySmallMobile(context)
+                ? 12
+                : _isLargeScreen(context)
+                    ? 20
+                    : 16),
             decoration: BoxDecoration(
               color: Colors.grey[100],
               borderRadius: const BorderRadius.only(
@@ -709,74 +740,168 @@ class _PendingApprovalsScreenState extends State<PendingApprovalsScreen>
                 bottomRight: Radius.circular(16),
               ),
             ),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                ElevatedButton.icon(
-                  onPressed: () => _handleApproval(
-                    context,
-                    postId,
-                    true,
-                    post['user_id'],
-                    post['last_updated_by'] ?? '',
-                    post['title'] ?? 'Untitled',
-                    updatedFlyer ?? '',
+            child: _isVerySmallMobile(context)
+                ? Column(
+                    children: [
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton.icon(
+                          onPressed: () => _handleApproval(
+                            context,
+                            postId,
+                            true,
+                            post['user_id'],
+                            post['last_updated_by'] ?? '',
+                            post['title'] ?? 'Untitled',
+                            updatedFlyer ?? '',
+                          ),
+                          icon: Icon(
+                            Icons.check_circle_outline,
+                            size: _isLargeScreen(context) ? 20 : 18,
+                          ),
+                          label: Text(
+                            'Approve',
+                            style: TextStyle(
+                              fontSize: _isLargeScreen(context) ? 16 : 14,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green.shade600,
+                            foregroundColor: Colors.white,
+                            padding: EdgeInsets.symmetric(
+                              horizontal: _isVerySmallMobile(context)
+                                  ? 16
+                                  : _isLargeScreen(context)
+                                      ? 24
+                                      : 20,
+                              vertical: _isVerySmallMobile(context)
+                                  ? 8
+                                  : _isLargeScreen(context)
+                                      ? 12
+                                      : 10,
+                            ),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(30)),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: OutlinedButton.icon(
+                          onPressed: () => _handleApproval(
+                            context,
+                            postId,
+                            false,
+                            post['user_id'],
+                            post['last_updated_by'] ?? '',
+                            post['title'] ?? 'Untitled',
+                            updatedFlyer ?? '',
+                          ),
+                          icon: Icon(
+                            Icons.feedback_outlined,
+                            size: _isLargeScreen(context) ? 20 : 18,
+                          ),
+                          label: Text(
+                            'Request Changes',
+                            style: TextStyle(
+                              fontSize: _isLargeScreen(context) ? 16 : 14,
+                            ),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.red.shade600,
+                            side: BorderSide(color: Colors.red.shade300),
+                            padding: EdgeInsets.symmetric(
+                              horizontal: _isVerySmallMobile(context)
+                                  ? 16
+                                  : _isLargeScreen(context)
+                                      ? 24
+                                      : 20,
+                              vertical: _isVerySmallMobile(context)
+                                  ? 8
+                                  : _isLargeScreen(context)
+                                      ? 12
+                                      : 10,
+                            ),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(30)),
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                : Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      Flexible(
+                        child: ElevatedButton.icon(
+                          onPressed: () => _handleApproval(
+                            context,
+                            postId,
+                            true,
+                            post['user_id'],
+                            post['last_updated_by'] ?? '',
+                            post['title'] ?? 'Untitled',
+                            updatedFlyer ?? '',
+                          ),
+                          icon: Icon(
+                            Icons.check_circle_outline,
+                            size: _isLargeScreen(context) ? 20 : 18,
+                          ),
+                          label: Text(
+                            'Approve',
+                            style: TextStyle(
+                              fontSize: _isLargeScreen(context) ? 16 : 14,
+                            ),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green.shade600,
+                            foregroundColor: Colors.white,
+                            padding: EdgeInsets.symmetric(
+                              horizontal: _isLargeScreen(context) ? 24 : 20,
+                              vertical: _isLargeScreen(context) ? 12 : 10,
+                            ),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(30)),
+                          ),
+                        ),
+                      ),
+                      SizedBox(width: _getButtonSpacing(context)),
+                      Flexible(
+                        child: OutlinedButton.icon(
+                          onPressed: () => _handleApproval(
+                            context,
+                            postId,
+                            false,
+                            post['user_id'],
+                            post['last_updated_by'] ?? '',
+                            post['title'] ?? 'Untitled',
+                            updatedFlyer ?? '',
+                          ),
+                          icon: Icon(
+                            Icons.feedback_outlined,
+                            size: _isLargeScreen(context) ? 20 : 18,
+                          ),
+                          label: Text(
+                            'Request Changes',
+                            style: TextStyle(
+                              fontSize: _isLargeScreen(context) ? 16 : 14,
+                            ),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.red.shade600,
+                            side: BorderSide(color: Colors.red.shade300),
+                            padding: EdgeInsets.symmetric(
+                              horizontal: _isLargeScreen(context) ? 24 : 20,
+                              vertical: _isLargeScreen(context) ? 12 : 10,
+                            ),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(30)),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                  icon: Icon(
-                    Icons.check_circle_outline,
-                    size: _isLargeScreen(context) ? 20 : 18,
-                  ),
-                  label: Text(
-                    'Approve',
-                    style: TextStyle(
-                      fontSize: _isLargeScreen(context) ? 16 : 14,
-                    ),
-                  ),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green.shade600,
-                    foregroundColor: Colors.white,
-                    padding: EdgeInsets.symmetric(
-                      horizontal: _isLargeScreen(context) ? 24 : 20,
-                      vertical: _isLargeScreen(context) ? 12 : 10,
-                    ),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(30)),
-                  ),
-                ),
-                SizedBox(width: _isLargeScreen(context) ? 16 : 12),
-                OutlinedButton.icon(
-                  onPressed: () => _handleApproval(
-                    context,
-                    postId,
-                    false,
-                    post['user_id'],
-                    post['last_updated_by'] ?? '',
-                    post['title'] ?? 'Untitled',
-                    updatedFlyer ?? '',
-                  ),
-                  icon: Icon(
-                    Icons.feedback_outlined,
-                    size: _isLargeScreen(context) ? 20 : 18,
-                  ),
-                  label: Text(
-                    'Request Changes',
-                    style: TextStyle(
-                      fontSize: _isLargeScreen(context) ? 16 : 14,
-                    ),
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: Colors.red.shade600,
-                    side: BorderSide(color: Colors.red.shade300),
-                    padding: EdgeInsets.symmetric(
-                      horizontal: _isLargeScreen(context) ? 24 : 20,
-                      vertical: _isLargeScreen(context) ? 12 : 10,
-                    ),
-                    shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(30)),
-                  ),
-                ),
-              ],
-            ),
           ),
         ],
       ),
@@ -792,7 +917,7 @@ class _PendingApprovalsScreenState extends State<PendingApprovalsScreen>
     Color textColor,
   ) {
     final imageHeight = _getImageHeight(context);
-    
+
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(12),

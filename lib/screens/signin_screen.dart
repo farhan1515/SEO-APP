@@ -8,6 +8,7 @@ import 'package:seo_app/screens/main_screen.dart';
 import 'package:seo_app/services/user_status.dart';
 import 'package:carousel_slider/carousel_slider.dart';
 import 'package:solar_icons/solar_icons.dart';
+import 'dart:io' show Platform;
 
 class SignInScreen extends StatefulWidget {
   const SignInScreen({Key? key}) : super(key: key);
@@ -451,13 +452,37 @@ class _SignInScreenState extends State<SignInScreen> {
 
   Future<void> _signInWithGoogle(BuildContext context) async {
     try {
+      // Check if Google Sign-In is supported on this device
+      if (!_isGoogleSignInSupported()) {
+        _showSnackbar(context, 'Google Sign-In is not supported on this device',
+            Colors.red);
+        return;
+      }
+
+      // Show loading indicator
+      _showSnackbar(context, 'Signing in with Google...', Colors.blue);
+
+      // Check if we're on Android and show specific message
+      if (!kIsWeb && Platform.isAndroid) {
+        print('Attempting Google Sign-In on Android...');
+      }
+
       final GoogleSignIn googleSignIn = GoogleSignIn(
         clientId: kIsWeb
             ? '623745717856-c8k8fjsja7gfmov1j8d8s4fhug0lal3t.apps.googleusercontent.com'
             : null,
         scopes: ['email', 'profile'],
+        // Add these configurations for better mobile support
+        signInOption: SignInOption.standard,
       );
 
+      // Check if user is already signed in and sign out if needed
+      if (await googleSignIn.isSignedIn()) {
+        print('User already signed in, signing out first...');
+        await googleSignIn.signOut();
+      }
+
+      print('Initiating Google Sign-In...');
       final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
 
       if (googleUser == null) {
@@ -467,18 +492,25 @@ class _SignInScreenState extends State<SignInScreen> {
         return;
       }
 
+      print('Google Sign-In successful, getting authentication...');
+      // Hide the loading message
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
       final GoogleSignInAuthentication googleAuth =
           await googleUser.authentication;
 
+      print('Authentication successful, creating Firebase credential...');
       final credential = GoogleAuthProvider.credential(
         accessToken: googleAuth.accessToken,
         idToken: googleAuth.idToken,
       );
 
+      print('Signing in to Firebase...');
       final UserCredential userCredential =
           await FirebaseAuth.instance.signInWithCredential(credential);
 
       if (userCredential.user != null && mounted) {
+        print('Firebase sign-in successful, updating user status...');
         await UserStatusService.updateUserStatus();
         if (mounted) {
           Navigator.pushReplacement(
@@ -491,8 +523,37 @@ class _SignInScreenState extends State<SignInScreen> {
       }
     } catch (e) {
       print('Error signing in with Google: $e');
+      print('Error type: ${e.runtimeType}');
+      print('Error details: ${e.toString()}');
+
+      // Hide any existing snackbar
       if (mounted) {
-        _showSnackbar(context, 'Sign-In failed. Please try again!', Colors.red);
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      }
+
+      // Show detailed error message
+      String errorMessage = 'Sign-In failed. Please try again!';
+
+      if (e.toString().contains('network_error')) {
+        errorMessage = 'Network error. Please check your internet connection.';
+      } else if (e.toString().contains('sign_in_canceled')) {
+        errorMessage = 'Sign-in was canceled.';
+      } else if (e.toString().contains('sign_in_failed')) {
+        errorMessage = 'Sign-in failed. Please try again.';
+      } else if (e.toString().contains('play_services_not_available')) {
+        errorMessage =
+            'Google Play Services not available. Please update your device.';
+      } else if (e.toString().contains('invalid_account')) {
+        errorMessage =
+            'Invalid account. Please try with a different Google account.';
+      } else if (e.toString().contains('developer_error')) {
+        errorMessage = 'Configuration error. Please contact support.';
+      } else if (e.toString().contains('internal_error')) {
+        errorMessage = 'Internal error. Please try again later.';
+      }
+
+      if (mounted) {
+        _showSnackbar(context, errorMessage, Colors.red);
       }
     }
   }
@@ -511,5 +572,13 @@ class _SignInScreenState extends State<SignInScreen> {
         ),
       );
     }
+  }
+
+  // Check if device supports Google Sign-In
+  bool _isGoogleSignInSupported() {
+    if (kIsWeb) return true;
+    if (Platform.isAndroid) return true;
+    if (Platform.isIOS) return true;
+    return false;
   }
 }

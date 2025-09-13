@@ -64,6 +64,9 @@ class _AppLifecycleManagerState extends State<AppLifecycleManager>
     FirebaseAuth.instance.authStateChanges().listen((User? user) async {
       if (user != null) {
         await NotificationService.initialize();
+        UserStatusService.startActiveStatusTracking();
+      } else {
+        UserStatusService.stopActiveStatusTracking();
       }
     });
   }
@@ -76,12 +79,23 @@ class _AppLifecycleManagerState extends State<AppLifecycleManager>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      UserStatusService.updateUserStatus();
-      // Re-initialize notifications if needed when app resumes
-      if (FirebaseAuth.instance.currentUser != null) {
-        NotificationService.initialize();
-      }
+    switch (state) {
+      case AppLifecycleState.resumed:
+        UserStatusService.markUserActive();
+        // Re-initialize notifications if needed when app resumes
+        if (FirebaseAuth.instance.currentUser != null) {
+          NotificationService.initialize();
+        }
+        break;
+      case AppLifecycleState.paused:
+      case AppLifecycleState.inactive:
+        UserStatusService.markUserInactive();
+        break;
+      case AppLifecycleState.detached:
+        UserStatusService.stopActiveStatusTracking();
+        break;
+      default:
+        break;
     }
   }
 

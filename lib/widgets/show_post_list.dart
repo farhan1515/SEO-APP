@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:seo_app/screens/chat_screen.dart';
@@ -7,6 +8,151 @@ import 'package:seo_app/theme/text_style.dart';
 import 'package:timeago/timeago.dart' as timeago;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+
+// Custom Marquee Widget for auto-scrolling text
+class MarqueeWidget extends StatefulWidget {
+  final String text;
+  final TextStyle style;
+  final Duration scrollDuration;
+  final Duration pauseDuration;
+  final double velocity;
+
+  const MarqueeWidget({
+    Key? key,
+    required this.text,
+    required this.style,
+    this.scrollDuration = const Duration(seconds: 10),
+    this.pauseDuration = const Duration(seconds: 2),
+    this.velocity = 50.0,
+  }) : super(key: key);
+
+  @override
+  State<MarqueeWidget> createState() => _MarqueeWidgetState();
+}
+
+class _MarqueeWidgetState extends State<MarqueeWidget>
+    with TickerProviderStateMixin {
+  late ScrollController _scrollController;
+  late AnimationController _animationController;
+  late Animation<double> _animation;
+  bool _isScrolling = false;
+  Timer? _periodicTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController();
+    _animationController = AnimationController(
+      duration: widget.scrollDuration,
+      vsync: this,
+    );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _startScrolling();
+
+      // Add a periodic check to ensure scrolling continues
+      _periodicTimer = Timer.periodic(const Duration(seconds: 15), (timer) {
+        if (mounted && !_isScrolling) {
+          _startScrolling();
+        }
+      });
+    });
+  }
+
+  void _startScrolling() {
+    if (!mounted) return;
+
+    Future.delayed(widget.pauseDuration, () {
+      if (!mounted) return;
+
+      final maxScroll = _scrollController.position.maxScrollExtent;
+      if (maxScroll > 0) {
+        setState(() {
+          _isScrolling = true;
+        });
+
+        // Reset animation controller for the next cycle
+        _animationController.reset();
+
+        _animation = Tween<double>(
+          begin: 0.0,
+          end: maxScroll,
+        ).animate(CurvedAnimation(
+          parent: _animationController,
+          curve: Curves.linear,
+        ));
+
+        _animation.addListener(() {
+          if (_scrollController.hasClients) {
+            _scrollController.jumpTo(_animation.value);
+          }
+        });
+
+        _animationController.forward().then((_) {
+          if (mounted) {
+            setState(() {
+              _isScrolling = false;
+            });
+            _scrollController.jumpTo(0);
+            // Always restart the cycle to ensure continuous scrolling
+            _startScrolling();
+          }
+        }).catchError((error) {
+          // If there's an error, still restart the cycle
+          if (mounted) {
+            _scrollController.jumpTo(0);
+            _startScrolling();
+          }
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _periodicTimer?.cancel();
+    _scrollController.dispose();
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final textPainter = TextPainter(
+          text: TextSpan(text: widget.text, style: widget.style),
+          textDirection: TextDirection.ltr,
+          maxLines: 1,
+        );
+        textPainter.layout();
+
+        final textWidth = textPainter.width;
+        final containerWidth = constraints.maxWidth;
+
+        // Only show marquee if text is wider than container
+        if (textWidth <= containerWidth) {
+          return Text(
+            widget.text,
+            style: widget.style,
+            overflow: TextOverflow.ellipsis,
+          );
+        }
+
+        return SingleChildScrollView(
+          controller: _scrollController,
+          scrollDirection: Axis.horizontal,
+          physics:
+              const NeverScrollableScrollPhysics(), // Disable manual scrolling
+          child: Text(
+            widget.text,
+            style: widget.style,
+          ),
+        );
+      },
+    );
+  }
+}
 
 class PostListScreen extends StatefulWidget {
   final String selectedTab; // 'today', 'scheduled', or 'prior'
@@ -448,29 +594,29 @@ class _PostListScreenState extends State<PostListScreen>
                                 const SizedBox(width: 8),
                                 Flexible(
                                   flex: 1,
-                                  child: SingleChildScrollView(
-                                    scrollDirection: Axis.horizontal,
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 12,
-                                        vertical: 6,
-                                      ),
-                                      decoration: BoxDecoration(
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: timeRemaining == 'Posted'
+                                          ? Colors.green.withOpacity(0.1)
+                                          : Colors.orange.withOpacity(0.1),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: MarqueeWidget(
+                                      text: timeRemaining,
+                                      style: poppins.copyWith(
                                         color: timeRemaining == 'Posted'
-                                            ? Colors.green.withOpacity(0.1)
-                                            : Colors.orange.withOpacity(0.1),
-                                        borderRadius: BorderRadius.circular(20),
+                                            ? Colors.green[800]
+                                            : Colors.orange[800],
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
                                       ),
-                                      child: Text(
-                                        timeRemaining,
-                                        style: poppins.copyWith(
-                                          color: timeRemaining == 'Posted'
-                                              ? Colors.green[800]
-                                              : Colors.orange[800],
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w500,
-                                        ),
-                                      ),
+                                      scrollDuration:
+                                          const Duration(seconds: 5),
+                                      pauseDuration: const Duration(seconds: 1),
                                     ),
                                   ),
                                 ),

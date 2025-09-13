@@ -712,11 +712,11 @@ class _PostScreenState extends State<PostScreen> {
                     ),
                     Row(
                       children: [
-                        IconButton(
-                          icon: const Icon(SolarIconsOutline.heart),
-                          onPressed: () {},
-                          color: Colors.black,
-                        ),
+                        // IconButton(
+                        //   icon: const Icon(SolarIconsOutline.heart),
+                        //   onPressed: () {},
+                        //   color: Colors.black,
+                        // ),
                         IconButton(
                           icon: const Icon(SolarIconsOutline.settings),
                           onPressed: () {
