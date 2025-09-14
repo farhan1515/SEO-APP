@@ -795,6 +795,7 @@ class _ChatScreenState extends State<ChatScreen> {
         'unreadCount': 0,
         'lastActive': FieldValue.serverTimestamp(),
       });
+      print('✅ [DEBUG] Reset unread count for chat: $_chatId');
     } catch (e) {
       print('Error resetting unread count: $e');
     }

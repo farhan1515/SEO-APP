@@ -1,17 +1,13 @@
 import 'package:flutter/material.dart';
-import 'package:seo_app/screens/dashboard_screen.dart';
-import 'package:seo_app/screens/history_screen.dart';
 import 'package:seo_app/screens/home_screen.dart';
 import 'package:seo_app/screens/pending_approval_screen.dart';
-import 'package:seo_app/screens/post_request_screen.dart';
 import 'package:seo_app/screens/chat_list_screen.dart';
 import 'package:seo_app/screens/post_screen.dart';
-import 'package:seo_app/screens/profile_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:seo_app/screens/status_screen.dart';
 import 'package:seo_app/theme/text_style.dart';
 import 'package:solar_icons/solar_icons.dart'; // You may need to add this package
 import 'package:seo_app/services/notification_service.dart';
+import 'package:seo_app/services/unread_count_service.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({Key? key}) : super(key: key);
@@ -40,6 +36,7 @@ class _MainScreenState extends State<MainScreen> {
   void initState() {
     super.initState();
     _initializeNotifications();
+    _initializeUnreadCount();
   }
 
   void _initializeNotifications() async {
@@ -53,6 +50,12 @@ class _MainScreenState extends State<MainScreen> {
         });
       }
     }
+  }
+
+  void _initializeUnreadCount() {
+    // Reset the unread count service when user changes
+    UnreadCountService.reset();
+    print('📱 [DEBUG] Initialized unread count service');
   }
 
   @override
@@ -97,6 +100,7 @@ class _MainScreenState extends State<MainScreen> {
 
   Widget _buildNavItem(int index, IconData icon, String label) {
     final isSelected = _selectedIndex == index;
+    final isChatIcon = index == 3; // Chat icon is at index 3
 
     return GestureDetector(
       onTap: () {
@@ -113,10 +117,56 @@ class _MainScreenState extends State<MainScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(
-              icon,
-              color: isSelected ? selectedColor : unselectedColor,
-              size: 24,
+            Stack(
+              children: [
+                Icon(
+                  icon,
+                  color: isSelected ? selectedColor : unselectedColor,
+                  size: 24,
+                ),
+                if (isChatIcon)
+                  StreamBuilder<int>(
+                    stream: UnreadCountService.unreadCountStream,
+                    builder: (context, snapshot) {
+                      final unreadCount = snapshot.data ?? 0;
+                      if (unreadCount > 0) {
+                        return Positioned(
+                          right: -2,
+                          top: -2,
+                          child: Container(
+                            padding: const EdgeInsets.all(4),
+                            decoration: const BoxDecoration(
+                              color: Color(
+                                  0xFFFF3B30), // Red badge color like Instagram
+                              shape: BoxShape.circle,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Color(0x29FF3B30),
+                                  blurRadius: 4,
+                                  spreadRadius: 1,
+                                ),
+                              ],
+                            ),
+                            constraints: const BoxConstraints(
+                              minWidth: 18,
+                              minHeight: 18,
+                            ),
+                            child: Text(
+                              unreadCount > 99 ? '99+' : unreadCount.toString(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10,
+                                fontWeight: FontWeight.bold,
+                              ),
+                              textAlign: TextAlign.center,
+                            ),
+                          ),
+                        );
+                      }
+                      return const SizedBox.shrink();
+                    },
+                  ),
+              ],
             ),
             const SizedBox(height: 4),
             Text(

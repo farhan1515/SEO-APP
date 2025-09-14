@@ -4,16 +4,15 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_functions/cloud_functions.dart';
-import 'package:seo_app/screens/pending_approval_screen.dart';
 import 'package:seo_app/screens/post_detail_screen.dart';
 import 'package:seo_app/screens/profile_list_screen.dart';
 import 'package:seo_app/screens/settings_screen.dart';
 import 'package:seo_app/theme/text_style.dart';
 import 'package:seo_app/widgets/filter_dialog.dart';
 import 'package:seo_app/widgets/show_post_list.dart';
+import 'package:seo_app/services/user_role_service.dart';
 import 'package:solar_icons/solar_icons.dart';
 import 'package:carousel_slider/carousel_slider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -33,8 +32,8 @@ class _HomeScreenState extends State<HomeScreen>
       ValueNotifier<Map<String, dynamic>>({});
   final ValueNotifier<bool> _isLoading = ValueNotifier<bool>(true);
   bool _isFetchingProfiles = false;
+  String? _userRole;
 
-  List<String> _availableProfiles = [];
   List<Map<String, dynamic>> _cachedPosts = [];
 
   @override
@@ -47,6 +46,10 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Future<void> _initializeData() async {
+    // First get the user's role
+    _userRole = await UserRoleService.getCurrentUserRole();
+    debugPrint('User role: $_userRole');
+
     // Load cached data first if available
     if (_cachedPosts.isNotEmpty) {
       _upcomingPostsNotifier.value = _cachedPosts;
@@ -64,6 +67,43 @@ class _HomeScreenState extends State<HomeScreen>
     try {
       debugPrint('🔍 Starting to fetch profiles for filter...');
 
+      // If user is a Customer, only fetch their own profiles
+      if (_userRole == 'Customer') {
+        debugPrint(
+            '👤 Customer role detected - fetching only user\'s profiles');
+        final currentUser = FirebaseAuth.instance.currentUser;
+        if (currentUser == null) return [];
+
+        final profilesSnapshot = await FirebaseFirestore.instance
+            .collection('profiles')
+            .doc(currentUser.uid)
+            .collection('profiles')
+            .get();
+
+        final profileNames = <String>[];
+        for (var doc in profilesSnapshot.docs) {
+          try {
+            final data = doc.data() as Map<String, dynamic>;
+            final businessDetails = data['businessDetails'];
+            if (businessDetails != null) {
+              final name = businessDetails['name'] as String?;
+              if (name != null && name.trim().isNotEmpty) {
+                profileNames.add(name.trim());
+                debugPrint('✅ Added customer profile: "$name"');
+              }
+            }
+          } catch (docError) {
+            debugPrint(
+                '❌ Error processing customer profile ${doc.id}: $docError');
+          }
+        }
+
+        debugPrint(
+            '🎯 Customer profiles result: ${profileNames.length} profiles');
+        return profileNames;
+      }
+
+      // For SEO Managers and Graphic Designers, fetch all profiles
       // Method 1: Try cloud function approach (works for SEO Managers)
       try {
         debugPrint('🌟 Trying cloud function approach...');
@@ -102,8 +142,7 @@ class _HomeScreenState extends State<HomeScreen>
           final data = doc.data() as Map<String, dynamic>;
           debugPrint('📄 Processing doc ${doc.id}: ${data.keys}');
 
-          final businessDetails =
-              data['businessDetails'] as Map<String, dynamic>?;
+          final businessDetails = data['businessDetails'];
           if (businessDetails != null) {
             final name = businessDetails['name'] as String?;
             if (name != null && name.trim().isNotEmpty) {
@@ -143,33 +182,76 @@ class _HomeScreenState extends State<HomeScreen>
       final currentUser = FirebaseAuth.instance.currentUser;
       if (currentUser == null) return;
 
-      final now = DateTime.now().toIso8601String();
+      // Get all approved posts first, then filter client-side for better time handling
+      Query<Map<String, dynamic>> query = FirebaseFirestore.instance
+          .collection('post_requests')
+          .where('flyer_approval_status', isEqualTo: 'approved');
+
+      // If user is a Customer, only show their own posts
+      if (_userRole == 'Customer') {
+        query = query.where('user_id', isEqualTo: currentUser.uid);
+        debugPrint(
+            'Filtering posts for Customer - only showing user\'s own posts');
+      } else {
+        debugPrint('User is $_userRole - showing all posts');
+      }
+
+      query = query.orderBy('scheduled_date');
 
       // First try to get from cache
-      final cachedSnapshot = await FirebaseFirestore.instance
-          .collection('post_requests')
-          .where('scheduled_date', isGreaterThanOrEqualTo: now)
-          .where('flyer_approval_status', isEqualTo: 'approved')
-          .orderBy('scheduled_date')
-          .get(const GetOptions(source: Source.cache));
+      final cachedSnapshot =
+          await query.get(const GetOptions(source: Source.cache));
 
+      List<Map<String, dynamic>> allPosts = [];
       if (cachedSnapshot.docs.isNotEmpty) {
-        _cachedPosts = cachedSnapshot.docs.map((doc) => doc.data()).toList();
-        _upcomingPostsNotifier.value = _cachedPosts;
+        allPosts = cachedSnapshot.docs.map((doc) => doc.data()).toList();
       }
 
       // Then get from server
-      final serverSnapshot = await FirebaseFirestore.instance
-          .collection('post_requests')
-          .where('scheduled_date', isGreaterThanOrEqualTo: now)
-          .where('flyer_approval_status', isEqualTo: 'approved')
-          .orderBy('scheduled_date')
-          .get();
+      final serverSnapshot = await query.get();
 
       if (serverSnapshot.docs.isNotEmpty) {
-        _cachedPosts = serverSnapshot.docs.map((doc) => doc.data()).toList();
-        _upcomingPostsNotifier.value = _cachedPosts;
+        allPosts = serverSnapshot.docs.map((doc) => doc.data()).toList();
       }
+
+      // Filter posts client-side to show posts that haven't actually expired yet
+      final now = DateTime.now();
+      final upcomingPosts = allPosts.where((post) {
+        final scheduledDateStr = post['scheduled_date'] as String?;
+        final scheduledTime = post['scheduled_time'] as String?;
+        final scheduledTimezone = post['scheduled_timezone'] as String?;
+
+        final scheduledDateTime = _parseScheduledDateTime(
+            scheduledDateStr, scheduledTime, scheduledTimezone);
+
+        if (scheduledDateTime == null) {
+          return false;
+        }
+
+        // Check if the post hasn't expired yet (scheduled time is in the future)
+        final isUpcoming = scheduledDateTime.isAfter(now);
+
+        debugPrint(
+            'Post "${post['title']}" scheduled for $scheduledDateTime, now is $now, isUpcoming: $isUpcoming');
+
+        return isUpcoming;
+      }).toList();
+
+      // Sort by scheduled date
+      upcomingPosts.sort((a, b) {
+        try {
+          final aDate = DateTime.parse(a['scheduled_date']);
+          final bDate = DateTime.parse(b['scheduled_date']);
+          return aDate.compareTo(bDate);
+        } catch (e) {
+          return 0;
+        }
+      });
+
+      _cachedPosts = upcomingPosts;
+      _upcomingPostsNotifier.value = upcomingPosts;
+
+      debugPrint('Found ${upcomingPosts.length} upcoming posts');
     } catch (e) {
       debugPrint('Error fetching posts: $e');
     } finally {
@@ -205,6 +287,52 @@ class _HomeScreenState extends State<HomeScreen>
     return months[month - 1];
   }
 
+  /// Helper function to parse scheduled datetime with timezone handling
+  DateTime? _parseScheduledDateTime(
+      String? scheduledDateStr, String? scheduledTime, String? timezone) {
+    try {
+      if (scheduledDateStr == null || scheduledTime == null) {
+        return null;
+      }
+
+      // Parse the scheduled date
+      final scheduledDate = DateTime.parse(scheduledDateStr);
+
+      // Parse time components
+      final timeParts = scheduledTime.split(':');
+      final hour = int.parse(timeParts[0]);
+      final minute = int.parse(timeParts[1]);
+
+      // Create the scheduled datetime in local timezone
+      final scheduledDateTime = DateTime(
+        scheduledDate.year,
+        scheduledDate.month,
+        scheduledDate.day,
+        hour,
+        minute,
+      );
+
+      // If timezone is specified, try to convert to local time
+      if (timezone != null && timezone.isNotEmpty) {
+        try {
+          // For now, we'll use the scheduled datetime as-is since timezone conversion
+          // requires more complex handling. In a production app, you'd want to use
+          // a proper timezone library to convert from the specified timezone to local time.
+          // For this fix, we'll assume the scheduled time is already in local time.
+          return scheduledDateTime;
+        } catch (e) {
+          debugPrint('Error handling timezone $timezone: $e');
+          return scheduledDateTime;
+        }
+      }
+
+      return scheduledDateTime;
+    } catch (e) {
+      debugPrint('Error parsing scheduled datetime: $e');
+      return null;
+    }
+  }
+
   void _onTabSelected(String tab) {
     _selectedTab.value = tab;
   }
@@ -231,13 +359,12 @@ class _HomeScreenState extends State<HomeScreen>
       body: LayoutBuilder(
         builder: (context, constraints) {
           double width = constraints.maxWidth;
-          bool isMobile = width < 600;
           bool isTablet = width >= 600 && width < 1100;
           bool isDesktop = width >= 1100;
 
           // Mobile-like dimensions for all platforms
           double carouselHeight = 220; // Reduced from 220
-          double profileSectionHeight = 60; // Reduced from 70
+          double profileSectionHeight = 75; // Reduced from 70
           double profileAvatarRadius = 20; // Reduced from 23
           double profileFontSize = 16; // Reduced from 18
           double feedHeaderTop = carouselHeight - 6; // Adjusted positioning
@@ -299,7 +426,7 @@ class _HomeScreenState extends State<HomeScreen>
                   margin: const EdgeInsets.symmetric(horizontal: 16),
                   height: profileSectionHeight,
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
                   decoration: const BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.only(
@@ -829,6 +956,7 @@ class _HomeScreenState extends State<HomeScreen>
                 selectedTab: selectedTab,
                 userId: userId,
                 filters: filters,
+                userRole: _userRole,
               ),
             );
           },

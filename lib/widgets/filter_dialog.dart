@@ -20,6 +20,19 @@ class _FilterDialogState extends State<FilterDialog> {
   String? _selectedProfile;
   String _searchText = '';
   DateTime? _selectedDate;
+  late TextEditingController _searchController;
+
+  @override
+  void initState() {
+    super.initState();
+    _searchController = TextEditingController(text: _searchText);
+  }
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -30,9 +43,19 @@ class _FilterDialogState extends State<FilterDialog> {
         '🔍 Filter Dialog: Unique profiles: ${uniqueProfileNames.length}');
     debugPrint('🔍 Filter Dialog: Profile list: $uniqueProfileNames');
 
-    // Get screen size
+    // Get screen size and keyboard visibility
     final screenSize = MediaQuery.of(context).size;
+    final viewInsets = MediaQuery.of(context).viewInsets;
+    final isKeyboardVisible = viewInsets.bottom > 0;
     final isSmallScreen = screenSize.width < 360;
+
+    // Ensure minimum viable height with fallbacks for very small screens
+    final availableHeight = screenSize.height - viewInsets.bottom;
+    final minHeight = isSmallScreen ? 250.0 : 300.0;
+    final maxHeight = isKeyboardVisible
+        ? (availableHeight * 0.75).clamp(minHeight, screenSize.height * 0.75)
+        : (screenSize.height * 0.85)
+            .clamp(minHeight + 100, screenSize.height * 0.85);
 
     return Dialog(
       shape: RoundedRectangleBorder(
@@ -42,12 +65,12 @@ class _FilterDialogState extends State<FilterDialog> {
       backgroundColor: Colors.transparent,
       insetPadding: EdgeInsets.symmetric(
         horizontal: isSmallScreen ? 16 : 24,
-        vertical: isSmallScreen ? 24 : 40,
+        vertical: isKeyboardVisible ? 20 : (isSmallScreen ? 24 : 40),
       ),
       child: Container(
         width: screenSize.width > 600 ? 500 : double.infinity,
         constraints: BoxConstraints(
-          maxHeight: screenSize.height * 0.85,
+          maxHeight: maxHeight,
         ),
         padding: EdgeInsets.all(isSmallScreen ? 16 : 20),
         decoration: BoxDecoration(
@@ -61,280 +84,288 @@ class _FilterDialogState extends State<FilterDialog> {
             ),
           ],
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Header
-            Row(
+        child: SafeArea(
+          child: SingleChildScrollView(
+            physics: BouncingScrollPhysics(),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Icon(Icons.filter_list, color: Color(0xFF3E1885), size: 24),
-                SizedBox(width: 12),
-                Text(
-                  'Filter Posts',
-                  style: mont.copyWith(
-                    color: Color(0xFF3E1885),
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
+                // Header
+                Row(
+                  children: [
+                    Icon(Icons.filter_list, color: Color(0xFF3E1885), size: 24),
+                    SizedBox(width: 12),
+                    Text(
+                      'Filter Posts',
+                      style: mont.copyWith(
+                        color: Color(0xFF3E1885),
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    Spacer(),
+                    IconButton(
+                      icon: Icon(Icons.close, color: Colors.grey),
+                      onPressed: () => Navigator.pop(context),
+                      padding: EdgeInsets.zero,
+                      constraints: BoxConstraints(),
+                    ),
+                  ],
+                ),
+                Divider(color: Colors.grey.shade300, thickness: 1),
+                SizedBox(height: 16),
+
+                // Filter Type Selector
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.grey.shade200),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Padding(
+                        padding: const EdgeInsets.only(left: 16, top: 12),
+                        child: Text(
+                          'Filter by',
+                          style: mont.copyWith(
+                            color: Colors.grey.shade700,
+                            fontSize: 14,
+                          ),
+                        ),
+                      ),
+                      SizedBox(height: 8),
+                      LayoutBuilder(
+                        builder: (context, constraints) {
+                          // For very small screens, use a wrapped layout
+                          if (constraints.maxWidth < 300) {
+                            return Wrap(
+                              spacing: 8,
+                              runSpacing: 8,
+                              alignment: WrapAlignment.center,
+                              children: [
+                                _buildFilterOption('Profile', 'profile_name',
+                                    Icons.person_outline),
+                                _buildFilterOption(
+                                    'Title', 'title', Icons.title),
+                                _buildFilterOption('Date', 'scheduled_date',
+                                    Icons.calendar_today),
+                              ],
+                            );
+                          }
+
+                          // For normal screens, use Row
+                          return Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              _buildFilterOption('Profile', 'profile_name',
+                                  Icons.person_outline),
+                              _buildFilterOption('Title', 'title', Icons.title),
+                              _buildFilterOption('Date', 'scheduled_date',
+                                  Icons.calendar_today),
+                            ],
+                          );
+                        },
+                      ),
+                      SizedBox(height: 12),
+                    ],
                   ),
                 ),
-                Spacer(),
-                IconButton(
-                  icon: Icon(Icons.close, color: Colors.grey),
-                  onPressed: () => Navigator.pop(context),
-                  padding: EdgeInsets.zero,
-                  constraints: BoxConstraints(),
+                SizedBox(height: 24),
+
+                // Filter Content
+                AnimatedSwitcher(
+                  duration: Duration(milliseconds: 300),
+                  child: _buildFilterContent(uniqueProfileNames),
+                ),
+
+                SizedBox(height: 24),
+
+                // Action Buttons - Responsive Layout
+                LayoutBuilder(
+                  builder: (context, constraints) {
+                    // For very small screens, stack buttons vertically
+                    if (constraints.maxWidth < 340) {
+                      return Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          // Clear Filters Button
+                          TextButton.icon(
+                            onPressed: () {
+                              setState(() {
+                                _selectedFilterType = 'profile_name';
+                                _selectedProfile = null;
+                                _searchText = '';
+                                _selectedDate = null;
+                              });
+                              _searchController.clear();
+                              widget.onApplyFilters({});
+                              Navigator.pop(context);
+                            },
+                            icon: Icon(Icons.clear_all,
+                                color: Colors.red.shade600, size: 20),
+                            label: Text(
+                              'Clear Filters',
+                              style: mont.copyWith(
+                                color: Colors.red.shade600,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          // Cancel Button
+                          OutlinedButton(
+                            onPressed: () => Navigator.pop(context),
+                            style: OutlinedButton.styleFrom(
+                              side: BorderSide(color: Colors.grey.shade300),
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            child: Text(
+                              'Cancel',
+                              style: mont.copyWith(
+                                color: Colors.grey.shade700,
+                                fontSize: 15,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          // Apply Filters Button
+                          ElevatedButton.icon(
+                            icon: const Icon(Icons.check, size: 18),
+                            label: Text(
+                              'Apply Filters',
+                              style: mont.copyWith(
+                                color: Colors.white,
+                                fontWeight: FontWeight.w600,
+                                fontSize: 15,
+                              ),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF3E1885),
+                              foregroundColor: Colors.white,
+                              elevation: 0,
+                              padding: const EdgeInsets.symmetric(vertical: 12),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(8),
+                              ),
+                            ),
+                            onPressed: () {
+                              final filters = {
+                                'filterType': _selectedFilterType,
+                                'profileName': _selectedProfile,
+                                'title': _searchText,
+                                'date': _selectedDate,
+                              };
+                              widget.onApplyFilters(filters);
+                              Navigator.pop(context);
+                            },
+                          ),
+                        ],
+                      );
+                    }
+
+                    // For normal screens, use horizontal layout with Expanded
+                    return Row(
+                      children: [
+                        // Clear Filters Button
+                        TextButton.icon(
+                          onPressed: () {
+                            setState(() {
+                              _selectedFilterType = 'profile_name';
+                              _selectedProfile = null;
+                              _searchText = '';
+                              _selectedDate = null;
+                            });
+                            _searchController.clear();
+                            widget.onApplyFilters({});
+                            Navigator.pop(context);
+                          },
+                          icon: Icon(Icons.clear_all,
+                              color: Colors.red.shade600, size: 20),
+                          label: Text(
+                            'Clear',
+                            style: mont.copyWith(
+                              color: Colors.red.shade600,
+                              fontSize: 15,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                        const Spacer(),
+                        // Cancel and Apply Buttons
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            OutlinedButton(
+                              onPressed: () => Navigator.pop(context),
+                              style: OutlinedButton.styleFrom(
+                                side: BorderSide(color: Colors.grey.shade300),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              child: Text(
+                                'Cancel',
+                                style: mont.copyWith(
+                                  color: Colors.grey.shade700,
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            ElevatedButton.icon(
+                              icon: const Icon(Icons.check, size: 18),
+                              label: Text(
+                                'Apply',
+                                style: mont.copyWith(
+                                  color: Colors.white,
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 15,
+                                ),
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF3E1885),
+                                foregroundColor: Colors.white,
+                                elevation: 0,
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                  vertical: 12,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                              ),
+                              onPressed: () {
+                                final filters = {
+                                  'filterType': _selectedFilterType,
+                                  'profileName': _selectedProfile,
+                                  'title': _searchText,
+                                  'date': _selectedDate,
+                                };
+                                widget.onApplyFilters(filters);
+                                Navigator.pop(context);
+                              },
+                            ),
+                          ],
+                        ),
+                      ],
+                    );
+                  },
                 ),
               ],
             ),
-            Divider(color: Colors.grey.shade300, thickness: 1),
-            SizedBox(height: 16),
-
-            // Filter Type Selector
-            Container(
-              decoration: BoxDecoration(
-                color: Colors.grey.shade50,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.grey.shade200),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Padding(
-                    padding: const EdgeInsets.only(left: 16, top: 12),
-                    child: Text(
-                      'Filter by',
-                      style: mont.copyWith(
-                        color: Colors.grey.shade700,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                  SizedBox(height: 8),
-                  LayoutBuilder(
-                    builder: (context, constraints) {
-                      // For very small screens, use a wrapped layout
-                      if (constraints.maxWidth < 300) {
-                        return Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          alignment: WrapAlignment.center,
-                          children: [
-                            _buildFilterOption('Profile', 'profile_name',
-                                Icons.person_outline),
-                            _buildFilterOption('Title', 'title', Icons.title),
-                            _buildFilterOption(
-                                'Date', 'scheduled_date', Icons.calendar_today),
-                          ],
-                        );
-                      }
-
-                      // For normal screens, use Row
-                      return Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          _buildFilterOption(
-                              'Profile', 'profile_name', Icons.person_outline),
-                          _buildFilterOption('Title', 'title', Icons.title),
-                          _buildFilterOption(
-                              'Date', 'scheduled_date', Icons.calendar_today),
-                        ],
-                      );
-                    },
-                  ),
-                  SizedBox(height: 12),
-                ],
-              ),
-            ),
-            SizedBox(height: 24),
-
-            // Filter Content
-            AnimatedSwitcher(
-              duration: Duration(milliseconds: 300),
-              child: _buildFilterContent(uniqueProfileNames),
-            ),
-
-            SizedBox(height: 24),
-
-            // Action Buttons - Responsive Layout
-            LayoutBuilder(
-              builder: (context, constraints) {
-                // For very small screens, stack buttons vertically
-                if (constraints.maxWidth < 340) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // Clear Filters Button
-                      TextButton.icon(
-                        onPressed: () {
-                          setState(() {
-                            _selectedFilterType = 'profile_name';
-                            _selectedProfile = null;
-                            _searchText = '';
-                            _selectedDate = null;
-                          });
-                          widget.onApplyFilters({});
-                          Navigator.pop(context);
-                        },
-                        icon: Icon(Icons.clear_all,
-                            color: Colors.red.shade600, size: 20),
-                        label: Text(
-                          'Clear Filters',
-                          style: mont.copyWith(
-                            color: Colors.red.shade600,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      // Cancel Button
-                      OutlinedButton(
-                        onPressed: () => Navigator.pop(context),
-                        style: OutlinedButton.styleFrom(
-                          side: BorderSide(color: Colors.grey.shade300),
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        child: Text(
-                          'Cancel',
-                          style: mont.copyWith(
-                            color: Colors.grey.shade700,
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      // Apply Filters Button
-                      ElevatedButton.icon(
-                        icon: const Icon(Icons.check, size: 18),
-                        label: Text(
-                          'Apply Filters',
-                          style: mont.copyWith(
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 15,
-                          ),
-                        ),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF3E1885),
-                          foregroundColor: Colors.white,
-                          elevation: 0,
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        onPressed: () {
-                          final filters = {
-                            'filterType': _selectedFilterType,
-                            'profileName': _selectedProfile,
-                            'title': _searchText,
-                            'date': _selectedDate,
-                          };
-                          widget.onApplyFilters(filters);
-                          Navigator.pop(context);
-                        },
-                      ),
-                    ],
-                  );
-                }
-
-                // For normal screens, use horizontal layout with Expanded
-                return Row(
-                  children: [
-                    // Clear Filters Button
-                    TextButton.icon(
-                      onPressed: () {
-                        setState(() {
-                          _selectedFilterType = 'profile_name';
-                          _selectedProfile = null;
-                          _searchText = '';
-                          _selectedDate = null;
-                        });
-                        widget.onApplyFilters({});
-                        Navigator.pop(context);
-                      },
-                      icon: Icon(Icons.clear_all,
-                          color: Colors.red.shade600, size: 20),
-                      label: Text(
-                        'Clear',
-                        style: mont.copyWith(
-                          color: Colors.red.shade600,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                    const Spacer(),
-                    // Cancel and Apply Buttons
-                    Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        OutlinedButton(
-                          onPressed: () => Navigator.pop(context),
-                          style: OutlinedButton.styleFrom(
-                            side: BorderSide(color: Colors.grey.shade300),
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          child: Text(
-                            'Cancel',
-                            style: mont.copyWith(
-                              color: Colors.grey.shade700,
-                              fontSize: 15,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        ElevatedButton.icon(
-                          icon: const Icon(Icons.check, size: 18),
-                          label: Text(
-                            'Apply',
-                            style: mont.copyWith(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w600,
-                              fontSize: 15,
-                            ),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF3E1885),
-                            foregroundColor: Colors.white,
-                            elevation: 0,
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 16,
-                              vertical: 12,
-                            ),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                          ),
-                          onPressed: () {
-                            final filters = {
-                              'filterType': _selectedFilterType,
-                              'profileName': _selectedProfile,
-                              'title': _searchText,
-                              'date': _selectedDate,
-                            };
-                            widget.onApplyFilters(filters);
-                            Navigator.pop(context);
-                          },
-                        ),
-                      ],
-                    ),
-                  ],
-                );
-              },
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -353,6 +384,7 @@ class _FilterDialogState extends State<FilterDialog> {
           _searchText = '';
           _selectedDate = null;
         });
+        _searchController.clear();
       },
       borderRadius: BorderRadius.circular(8),
       child: Container(
@@ -520,6 +552,7 @@ class _FilterDialogState extends State<FilterDialog> {
             border: Border.all(color: Colors.grey.shade300),
           ),
           child: TextField(
+            controller: _searchController,
             decoration: InputDecoration(
               labelText: 'Search by title',
               labelStyle: mont.copyWith(color: Colors.grey.shade700),
@@ -533,7 +566,7 @@ class _FilterDialogState extends State<FilterDialog> {
               ),
               focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(12),
-                borderSide: BorderSide.none,
+                borderSide: BorderSide(color: Color(0xFF3E1885), width: 2),
               ),
               contentPadding:
                   EdgeInsets.symmetric(horizontal: 16, vertical: 16),
@@ -542,15 +575,28 @@ class _FilterDialogState extends State<FilterDialog> {
               hintText: 'Enter post title keywords',
               hintStyle: mont.copyWith(color: Colors.grey.shade400),
               prefixIcon: Icon(Icons.search, color: Color(0xFF3E1885)),
+              suffixIcon: _searchText.isNotEmpty
+                  ? IconButton(
+                      icon: Icon(Icons.clear, color: Colors.grey.shade600),
+                      onPressed: () {
+                        setState(() {
+                          _searchText = '';
+                        });
+                        _searchController.clear();
+                      },
+                    )
+                  : null,
             ),
             style: mont.copyWith(
               fontSize: 16,
               color: Colors.black87,
             ),
+            textInputAction: TextInputAction.done,
             onChanged: (value) {
               setState(() {
                 _searchText = value;
               });
+              _searchController.text = value;
             },
           ),
         );

@@ -2,12 +2,9 @@ import 'dart:convert';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:seo_app/screens/chat_screen.dart';
 import 'package:seo_app/screens/post_detail_screen.dart';
 import 'package:seo_app/theme/text_style.dart';
-import 'package:timeago/timeago.dart' as timeago;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 // Custom Marquee Widget for auto-scrolling text
 class MarqueeWidget extends StatefulWidget {
@@ -158,12 +155,14 @@ class PostListScreen extends StatefulWidget {
   final String selectedTab; // 'today', 'scheduled', or 'prior'
   final String userId;
   final Map<String, dynamic>? filters;
+  final String? userRole;
 
   const PostListScreen({
     Key? key,
     required this.selectedTab,
     required this.userId,
     this.filters,
+    this.userRole,
   }) : super(key: key);
 
   @override
@@ -177,7 +176,6 @@ class _PostListScreenState extends State<PostListScreen>
   bool _isMounted = false;
   Map<String, String> _profileNames = {};
   late AnimationController _animationController;
-  late Animation<double> _fadeAnimation;
 
   @override
   bool get wantKeepAlive => true; // Preserve state when switching tabs
@@ -190,12 +188,6 @@ class _PostListScreenState extends State<PostListScreen>
       vsync: this,
       duration: const Duration(milliseconds: 300),
     );
-    _fadeAnimation = Tween<double>(begin: 0.0, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _animationController,
-        curve: Curves.easeInOut,
-      ),
-    );
     _fetchPosts();
   }
 
@@ -204,8 +196,9 @@ class _PostListScreenState extends State<PostListScreen>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.selectedTab != widget.selectedTab ||
         oldWidget.userId != widget.userId ||
-        oldWidget.filters != widget.filters) {
-      _fetchPosts(); // Fetch posts if tab, user, or filters change
+        oldWidget.filters != widget.filters ||
+        oldWidget.userRole != widget.userRole) {
+      _fetchPosts(); // Fetch posts if tab, user, filters, or role change
     }
   }
 
@@ -214,6 +207,52 @@ class _PostListScreenState extends State<PostListScreen>
     _isMounted = false;
     _animationController.dispose();
     super.dispose();
+  }
+
+  /// Helper function to parse scheduled datetime with timezone handling
+  DateTime? _parseScheduledDateTime(
+      String? scheduledDateStr, String? scheduledTime, String? timezone) {
+    try {
+      if (scheduledDateStr == null || scheduledTime == null) {
+        return null;
+      }
+
+      // Parse the scheduled date
+      final scheduledDate = DateTime.parse(scheduledDateStr);
+
+      // Parse time components
+      final timeParts = scheduledTime.split(':');
+      final hour = int.parse(timeParts[0]);
+      final minute = int.parse(timeParts[1]);
+
+      // Create the scheduled datetime in local timezone
+      final scheduledDateTime = DateTime(
+        scheduledDate.year,
+        scheduledDate.month,
+        scheduledDate.day,
+        hour,
+        minute,
+      );
+
+      // If timezone is specified, try to convert to local time
+      if (timezone != null && timezone.isNotEmpty) {
+        try {
+          // For now, we'll use the scheduled datetime as-is since timezone conversion
+          // requires more complex handling. In a production app, you'd want to use
+          // a proper timezone library to convert from the specified timezone to local time.
+          // For this fix, we'll assume the scheduled time is already in local time.
+          return scheduledDateTime;
+        } catch (e) {
+          print('Error handling timezone $timezone: $e');
+          return scheduledDateTime;
+        }
+      }
+
+      return scheduledDateTime;
+    } catch (e) {
+      print('Error parsing scheduled datetime: $e');
+      return null;
+    }
   }
 
   Future<void> _fetchPosts() async {
@@ -230,7 +269,16 @@ class _PostListScreenState extends State<PostListScreen>
       Query<Map<String, dynamic>> query =
           FirebaseFirestore.instance.collection('post_requests');
 
-      // Apply tab-specific filtering first
+      // Apply role-based filtering first
+      if (widget.userRole == 'Customer') {
+        // Customers can only see their own posts
+        query = query.where('user_id', isEqualTo: widget.userId);
+        print('Filtering posts for Customer - only showing user\'s own posts');
+      } else {
+        print('User is ${widget.userRole} - showing all posts');
+      }
+
+      // Apply tab-specific filtering
       final now = DateTime.now().toIso8601String();
       switch (widget.selectedTab) {
         case 'today':
@@ -238,16 +286,18 @@ class _PostListScreenState extends State<PostListScreen>
           query = query.orderBy('created_at', descending: true);
           break;
         case 'scheduled':
-          // Show only upcoming posts
-          query = query
-              .where('scheduled_date', isGreaterThanOrEqualTo: now)
-              .orderBy('scheduled_date', descending: true);
+          // Show only upcoming posts - we'll filter client-side for better time handling
+          // First get all posts, then filter by actual scheduled datetime
+          query = query.orderBy('scheduled_date', descending: true);
           break;
         case 'prior':
-          // Show all posts for the logged-in user, sorted by created_at descending
-          query = query
-              .where('user_id', isEqualTo: widget.userId)
-              .orderBy('created_at', descending: true);
+          // For customers, this is already filtered by user_id above
+          // For managers/designers, show all posts
+          if (widget.userRole != 'Customer') {
+            query = query.orderBy('created_at', descending: true);
+          } else {
+            query = query.orderBy('created_at', descending: true);
+          }
           break;
       }
 
@@ -296,8 +346,36 @@ class _PostListScreenState extends State<PostListScreen>
       print(
           'Fetched ${snapshot.docs.length} posts for tab: ${widget.selectedTab}');
 
-      // Apply additional client-side filtering for title if needed
+      // Apply client-side filtering
       List<DocumentSnapshot> filteredDocs = snapshot.docs;
+
+      // Apply scheduled tab filtering - show only posts that haven't actually expired
+      if (widget.selectedTab == 'scheduled') {
+        final now = DateTime.now();
+        filteredDocs = filteredDocs.where((doc) {
+          final data = doc.data() as Map<String, dynamic>;
+          final scheduledDateStr = data['scheduled_date'] as String?;
+          final scheduledTime = data['scheduled_time'] as String?;
+          final scheduledTimezone = data['scheduled_timezone'] as String?;
+
+          final scheduledDateTime = _parseScheduledDateTime(
+              scheduledDateStr, scheduledTime, scheduledTimezone);
+
+          if (scheduledDateTime == null) {
+            return false;
+          }
+
+          // Check if the post hasn't expired yet (scheduled time is in the future)
+          final isUpcoming = scheduledDateTime.isAfter(now);
+
+          print(
+              'Post "${data['title']}" scheduled for $scheduledDateTime, now is $now, isUpcoming: $isUpcoming');
+
+          return isUpcoming;
+        }).toList();
+      }
+
+      // Apply additional client-side filtering for title if needed
       if (widget.filters != null &&
           widget.filters!['filterType'] == 'title' &&
           widget.filters!['title'] != null &&
@@ -435,9 +513,7 @@ class _PostListScreenState extends State<PostListScreen>
     return LayoutBuilder(
       builder: (context, constraints) {
         double width = constraints.maxWidth;
-        bool isMobile = width < 600;
         bool isTablet = width >= 600 && width < 1100;
-        bool isDesktop = width >= 1100;
 
         // Use mobile layout for desktop/laptop
         double mainContentMaxWidth = isTablet ? 800 : double.infinity;

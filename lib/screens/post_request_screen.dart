@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:typed_data';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:seo_app/models/recurring_schedule.dart';
@@ -10,10 +11,8 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image/image.dart' as img;
-
-import 'package:intl/date_symbol_data_local.dart';
-import 'package:table_calendar/table_calendar.dart';
-import 'package:intl/intl.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:solar_icons/solar_icons.dart';
 
 import '../widgets/schedule_selector.dart';
 
@@ -46,10 +45,19 @@ class _PostRequestScreenState extends State<PostRequestScreen> {
 
   final GlobalKey<ScheduleSelectorState> _scheduleSelectorKey = GlobalKey();
 
+  // Auto-save related variables
+  Timer? _debounceTimer;
+  bool _isAutoSaving = false;
+  DateTime? _lastSaveTime;
+  late SharedPreferences _prefs;
+  String get _autoSaveKey =>
+      'post_request_autosave_${FirebaseAuth.instance.currentUser?.uid ?? 'anonymous'}_${widget.postId ?? 'new'}';
+
   @override
   void initState() {
     super.initState();
     _isEditing = widget.postId != null;
+    _initializePreferences();
 
     if (_isEditing && widget.existingData != null) {
       print('Existing Data: ${widget.existingData}'); // Debug print
@@ -81,20 +89,7 @@ class _PostRequestScreenState extends State<PostRequestScreen> {
       setState(() {
         _selectedImage = File(pickedFile.path);
       });
-    }
-  }
-
-  Future<String?> _uploadImage(File image) async {
-    try {
-      final ref = FirebaseStorage.instance
-          .ref()
-          .child('post_images')
-          .child(DateTime.now().toIso8601String() + '.jpg');
-      await ref.putFile(image);
-      return await ref.getDownloadURL();
-    } catch (e) {
-      print('Error uploading image: $e');
-      return null;
+      _triggerAutoSave();
     }
   }
 
@@ -125,6 +120,211 @@ class _PostRequestScreenState extends State<PostRequestScreen> {
       print('Error converting image to Base64: $e');
       return null;
     }
+  }
+
+  // Auto-save functionality
+  Future<void> _initializePreferences() async {
+    _prefs = await SharedPreferences.getInstance();
+
+    // If not editing, try to load auto-saved data
+    if (!_isEditing) {
+      await _loadAutoSavedData();
+    }
+
+    // Setup listeners for auto-save
+    _setupAutoSaveListeners();
+  }
+
+  void _setupAutoSaveListeners() {
+    _titleController.addListener(_triggerAutoSave);
+    _descriptionController.addListener(_triggerAutoSave);
+    _highlightController.addListener(_triggerAutoSave);
+  }
+
+  void _triggerAutoSave() {
+    // Cancel any existing timer
+    _debounceTimer?.cancel();
+
+    // Set up a new timer with 2-second delay
+    _debounceTimer = Timer(const Duration(seconds: 2), () {
+      _autoSaveFormData();
+    });
+  }
+
+  Future<void> _autoSaveFormData() async {
+    if (!mounted) return;
+
+    setState(() {
+      _isAutoSaving = true;
+    });
+
+    try {
+      final autoSaveData = {
+        'title': _titleController.text,
+        'description': _descriptionController.text,
+        'highlighted_text': _highlightController.text,
+        'platforms': _selectedPlatforms,
+        'image_base64': _existingImageBase64,
+        'scheduled_date': _scheduledDate?.toIso8601String(),
+        'scheduled_time': _scheduledTime,
+        'scheduled_timezone': _scheduledTimezone,
+        'recurring_schedule': _recurringSchedule?.toJson(),
+        'lastSaved': DateTime.now().toIso8601String(),
+      };
+
+      await _prefs.setString(_autoSaveKey, jsonEncode(autoSaveData));
+
+      if (mounted) {
+        setState(() {
+          _isAutoSaving = false;
+          _lastSaveTime = DateTime.now();
+        });
+      }
+    } catch (e) {
+      print('Error auto-saving: $e');
+      if (mounted) {
+        setState(() {
+          _isAutoSaving = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadAutoSavedData() async {
+    try {
+      final autoSavedJson = _prefs.getString(_autoSaveKey);
+      if (autoSavedJson != null) {
+        final autoSavedData = jsonDecode(autoSavedJson) as Map<String, dynamic>;
+
+        // Load form data
+        _titleController.text = autoSavedData['title'] ?? '';
+        _descriptionController.text = autoSavedData['description'] ?? '';
+        _highlightController.text = autoSavedData['highlighted_text'] ?? '';
+        _selectedPlatforms =
+            List<String>.from(autoSavedData['platforms'] ?? []);
+        _existingImageBase64 = autoSavedData['image_base64'];
+
+        // Load scheduling data
+        if (autoSavedData['scheduled_date'] != null) {
+          _scheduledDate = DateTime.parse(autoSavedData['scheduled_date']);
+        }
+        _scheduledTime = autoSavedData['scheduled_time'];
+        _scheduledTimezone = autoSavedData['scheduled_timezone'];
+        if (autoSavedData['recurring_schedule'] != null) {
+          _recurringSchedule = RecurringSchedule.fromJson(
+              Map<String, dynamic>.from(autoSavedData['recurring_schedule']));
+        }
+
+        // Parse last saved time
+        final lastSavedString = autoSavedData['lastSaved'] as String?;
+        if (lastSavedString != null) {
+          _lastSaveTime = DateTime.parse(lastSavedString);
+        }
+
+        // Update UI
+        if (mounted) {
+          setState(() {});
+          // Show snackbar about restored data
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Row(
+                    children: [
+                      Icon(SolarIconsOutline.clockCircle,
+                          color: Colors.white, size: 16),
+                      SizedBox(width: 8),
+                      Text(
+                        'Previous progress restored',
+                        style: mont.copyWith(fontSize: 14, color: Colors.white),
+                      ),
+                    ],
+                  ),
+                  backgroundColor: Color(0xFF5664F5),
+                  behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                  duration: Duration(seconds: 3),
+                ),
+              );
+            }
+          });
+        }
+      }
+    } catch (e) {
+      print('Error loading auto-saved data: $e');
+    }
+  }
+
+  Future<void> _clearAutoSavedData() async {
+    try {
+      await _prefs.remove(_autoSaveKey);
+      _lastSaveTime = null;
+    } catch (e) {
+      print('Error clearing auto-saved data: $e');
+    }
+  }
+
+  Widget _buildAutoSaveIndicator() {
+    final isSmallScreen = MediaQuery.of(context).size.width < 400;
+
+    if (_isAutoSaving) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: isSmallScreen ? 10 : 12,
+            height: isSmallScreen ? 10 : 12,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF5664F5)),
+            ),
+          ),
+          SizedBox(width: isSmallScreen ? 3 : 4),
+          Text(
+            'Saving...',
+            style: mont.copyWith(
+              color: Color(0xFF5664F5),
+              fontSize: isSmallScreen ? 10 : 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      );
+    } else if (_lastSaveTime != null) {
+      final now = DateTime.now();
+      final difference = now.difference(_lastSaveTime!);
+      String timeText;
+
+      if (difference.inSeconds < 60) {
+        timeText = isSmallScreen ? 'Saved now' : 'Saved just now';
+      } else if (difference.inMinutes < 60) {
+        timeText = 'Saved ${difference.inMinutes}m ago';
+      } else {
+        timeText = 'Saved ${difference.inHours}h ago';
+      }
+
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            SolarIconsOutline.checkCircle,
+            size: isSmallScreen ? 10 : 12,
+            color: Colors.green,
+          ),
+          SizedBox(width: isSmallScreen ? 3 : 4),
+          Text(
+            timeText,
+            style: mont.copyWith(
+              color: Colors.green,
+              fontSize: isSmallScreen ? 10 : 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      );
+    }
+    return SizedBox.shrink();
   }
 
   Future<void> _submitData() async {
@@ -222,6 +422,9 @@ class _PostRequestScreenState extends State<PostRequestScreen> {
       print("Data ${_isEditing ? 'updated' : 'submitted'} successfully:");
       print(postData);
 
+      // Clear auto-saved data after successful submission
+      await _clearAutoSavedData();
+
       // Clear form if it's a new post
       if (!_isEditing) {
         _titleController.clear();
@@ -262,8 +465,20 @@ class _PostRequestScreenState extends State<PostRequestScreen> {
   }
 
   @override
+  void dispose() {
+    // Cancel auto-save timer
+    _debounceTimer?.cancel();
+
+    // Dispose controllers
+    _titleController.dispose();
+    _descriptionController.dispose();
+    _highlightController.dispose();
+
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    
     return Scaffold(
       backgroundColor: Color(0xFFc9dee7),
       body: SafeArea(
@@ -285,12 +500,21 @@ class _PostRequestScreenState extends State<PostRequestScreen> {
                         ),
                       ),
                       const SizedBox(width: 12),
-                      Text(
-                        _isEditing ? 'Edit Post' : 'Post Request',
-                        style: const TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.bold,
-                        ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            _isEditing ? 'Edit Post' : 'Post Request',
+                            style: const TextStyle(
+                              fontSize: 20,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          if (_isAutoSaving || _lastSaveTime != null) ...[
+                            SizedBox(height: 4),
+                            _buildAutoSaveIndicator(),
+                          ],
+                        ],
                       ),
                     ],
                   ),
@@ -465,6 +689,7 @@ class _PostRequestScreenState extends State<PostRequestScreen> {
                       } else {
                         _selectedPlatforms.add('facebook');
                       }
+                      _triggerAutoSave();
                     }),
                   ),
                   const SizedBox(width: 12),
@@ -477,6 +702,7 @@ class _PostRequestScreenState extends State<PostRequestScreen> {
                       } else {
                         _selectedPlatforms.add('instagram');
                       }
+                      _triggerAutoSave();
                     }),
                   ),
                   const SizedBox(width: 12),
@@ -489,6 +715,7 @@ class _PostRequestScreenState extends State<PostRequestScreen> {
                       } else {
                         _selectedPlatforms.add('whatsapp');
                       }
+                      _triggerAutoSave();
                     }),
                   ),
                 ],
@@ -512,6 +739,7 @@ class _PostRequestScreenState extends State<PostRequestScreen> {
                     _scheduledTimezone = timezone;
                     _recurringSchedule = recurring;
                   });
+                  _triggerAutoSave();
                 },
               ),
 

@@ -2,7 +2,7 @@ name: seo_app
 description: "SEO Credit"
 publish_to: "none"
 
-version: 1.0.0+8
+version: 1.0.0+9
 
 environment:
   sdk: ^3.7.0-41.0.dev
@@ -40,7 +40,7 @@ dependencies:
   http: ^1.1.0
   path_provider: ^2.1.1
   firebase_messaging: ^15.2.5
-  flutter_local_notifications: ^19.1.0
+  flutter_local_notifications: ^19.4.2
   flutter_launcher_icons: ^0.14.3
   image: ^4.2.0
   flutter_dotenv: ^5.1.0

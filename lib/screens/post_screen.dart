@@ -1,34 +1,26 @@
 import 'dart:convert';
-import 'dart:io';
 import 'dart:typed_data';
 import 'dart:ui';
+import 'dart:async';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:intl/date_symbol_data_local.dart';
-import 'package:seo_app/screens/home_screen.dart';
 import 'package:seo_app/screens/main_screen.dart';
 import 'package:seo_app/screens/profile_list_screen.dart';
-import 'package:seo_app/screens/profile_screen.dart';
 import 'package:seo_app/screens/settings_screen.dart';
 import 'package:seo_app/theme/text_style.dart';
-import 'package:table_calendar/table_calendar.dart';
-import 'package:intl/intl.dart';
 import 'package:solar_icons/solar_icons.dart';
 import 'package:dotted_border/dotted_border.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../models/recurring_schedule.dart';
 import '../widgets/schedule_selector.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
 import 'package:seo_app/services/notification_service.dart';
-import 'package:flutter_dotenv/flutter_dotenv.dart';
-import 'package:seo_app/services/twilio_service.dart';
-import 'package:http/http.dart' as http;
 
 import 'package:cloud_functions/cloud_functions.dart';
 
@@ -64,9 +56,18 @@ class _PostScreenState extends State<PostScreen> {
 
   final GlobalKey<ScheduleSelectorState> _scheduleSelectorKey = GlobalKey();
 
+  // Auto-save related variables
+  Timer? _debounceTimer;
+  bool _isAutoSaving = false;
+  DateTime? _lastSaveTime;
+  late SharedPreferences _prefs;
+  String get _autoSaveKey =>
+      'post_autosave_${FirebaseAuth.instance.currentUser?.uid ?? 'anonymous'}_${widget.existingData?['id'] ?? 'new'}';
+
   @override
   void initState() {
     super.initState();
+    _initializePreferences();
     if (widget.existingData != null) {
       _titleController.text = widget.existingData!['title'] ?? '';
       _descriptionController.text = widget.existingData!['description'] ?? '';
@@ -279,6 +280,7 @@ class _PostScreenState extends State<PostScreen> {
           setState(() {
             _selectedImageBytes = fileBytes;
           });
+          _triggerAutoSave();
         }
       }
     } else {
@@ -290,6 +292,7 @@ class _PostScreenState extends State<PostScreen> {
         setState(() {
           _selectedImageBytes = fileBytes;
         });
+        _triggerAutoSave();
       }
     }
   }
@@ -307,6 +310,7 @@ class _PostScreenState extends State<PostScreen> {
           setState(() {
             _selectedFlyerImageBytes = fileBytes;
           });
+          _triggerAutoSave();
         }
       }
     } else {
@@ -318,6 +322,7 @@ class _PostScreenState extends State<PostScreen> {
         setState(() {
           _selectedFlyerImageBytes = fileBytes;
         });
+        _triggerAutoSave();
       }
     }
   }
@@ -335,20 +340,6 @@ class _PostScreenState extends State<PostScreen> {
       return base64Encode(compressedBytes);
     } catch (e) {
       print('Error converting image to Base64: $e');
-      return null;
-    }
-  }
-
-  Future<String?> _uploadFlyerToStorage(
-      Uint8List flyerBytes, String postId) async {
-    try {
-      final ref =
-          FirebaseStorage.instance.ref().child('flyers').child('$postId.jpg');
-      await ref.putData(
-          flyerBytes, SettableMetadata(contentType: 'image/jpeg'));
-      return await ref.getDownloadURL();
-    } catch (e) {
-      print('Error uploading flyer to storage: $e');
       return null;
     }
   }
@@ -612,6 +603,9 @@ class _PostScreenState extends State<PostScreen> {
         await batch.commit();
       }
 
+      // Clear auto-saved data after successful submission
+      await _clearAutoSavedData();
+
       Navigator.of(context, rootNavigator: true).pop();
       Navigator.pushReplacement(
         context,
@@ -647,6 +641,244 @@ class _PostScreenState extends State<PostScreen> {
   String _generateChatId(String user1, String user2) {
     final ids = [user1, user2]..sort();
     return '${ids[0]}-${ids[1]}';
+  }
+
+  // Auto-save functionality
+  Future<void> _initializePreferences() async {
+    _prefs = await SharedPreferences.getInstance();
+
+    // If not editing, try to load auto-saved data
+    if (widget.existingData == null) {
+      await _loadAutoSavedData();
+    }
+
+    // Setup listeners for auto-save
+    _setupAutoSaveListeners();
+  }
+
+  void _setupAutoSaveListeners() {
+    _titleController.addListener(_triggerAutoSave);
+    _descriptionController.addListener(_triggerAutoSave);
+    _highlightController.addListener(_triggerAutoSave);
+    _referenceLinkController.addListener(_triggerAutoSave);
+  }
+
+  void _triggerAutoSave() {
+    // Cancel any existing timer
+    _debounceTimer?.cancel();
+
+    // Set up a new timer with 2-second delay
+    _debounceTimer = Timer(const Duration(seconds: 2), () {
+      _autoSaveFormData();
+    });
+  }
+
+  Future<void> _autoSaveFormData() async {
+    if (!mounted) return;
+
+    setState(() {
+      _isAutoSaving = true;
+    });
+
+    try {
+      final autoSaveData = {
+        'title': _titleController.text,
+        'description': _descriptionController.text,
+        'highlighted_text': _highlightController.text,
+        'platforms': selectedPlatforms,
+        'image_base64': _selectedImageBytes != null
+            ? base64Encode(_selectedImageBytes!)
+            : null,
+        'flyer_base64': _selectedFlyerImageBytes != null
+            ? base64Encode(_selectedFlyerImageBytes!)
+            : null,
+        'scheduled_date': _scheduledDate?.toIso8601String(),
+        'scheduled_time': _scheduledTime,
+        'scheduled_timezone': _scheduledTimezone,
+        'recurring_schedule': _recurringSchedule?.toJson(),
+        'selected_profile_id': _selectedProfileId,
+        'reference_link': _referenceLinkController.text,
+        'lastSaved': DateTime.now().toIso8601String(),
+      };
+
+      await _prefs.setString(_autoSaveKey, jsonEncode(autoSaveData));
+
+      if (mounted) {
+        setState(() {
+          _isAutoSaving = false;
+          _lastSaveTime = DateTime.now();
+        });
+      }
+    } catch (e) {
+      print('Error auto-saving: $e');
+      if (mounted) {
+        setState(() {
+          _isAutoSaving = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _loadAutoSavedData() async {
+    try {
+      final autoSavedJson = _prefs.getString(_autoSaveKey);
+      if (autoSavedJson != null) {
+        final autoSavedData = jsonDecode(autoSavedJson) as Map<String, dynamic>;
+
+        // Load form data
+        _titleController.text = autoSavedData['title'] ?? '';
+        _descriptionController.text = autoSavedData['description'] ?? '';
+        _highlightController.text = autoSavedData['highlighted_text'] ?? '';
+        selectedPlatforms = List<String>.from(autoSavedData['platforms'] ?? []);
+        _referenceLinkController.text = autoSavedData['reference_link'] ?? '';
+
+        // Load image data
+        if (autoSavedData['image_base64'] != null) {
+          _selectedImageBytes = base64Decode(autoSavedData['image_base64']);
+        }
+        if (autoSavedData['flyer_base64'] != null) {
+          _selectedFlyerImageBytes =
+              base64Decode(autoSavedData['flyer_base64']);
+        }
+
+        // Load scheduling data
+        if (autoSavedData['scheduled_date'] != null) {
+          _scheduledDate = DateTime.parse(autoSavedData['scheduled_date']);
+        }
+        _scheduledTime = autoSavedData['scheduled_time'];
+        _scheduledTimezone = autoSavedData['scheduled_timezone'];
+        if (autoSavedData['recurring_schedule'] != null) {
+          _recurringSchedule = RecurringSchedule.fromJson(
+              Map<String, dynamic>.from(autoSavedData['recurring_schedule']));
+        }
+
+        // Load profile selection
+        _selectedProfileId = autoSavedData['selected_profile_id'];
+
+        // Parse last saved time
+        final lastSavedString = autoSavedData['lastSaved'] as String?;
+        if (lastSavedString != null) {
+          _lastSaveTime = DateTime.parse(lastSavedString);
+        }
+
+        // Update UI
+        if (mounted) {
+          setState(() {});
+          // Show snackbar about restored data
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Row(
+                    children: [
+                      Icon(SolarIconsOutline.clockCircle,
+                          color: Colors.white, size: 16),
+                      SizedBox(width: 8),
+                      Text(
+                        'Previous progress restored',
+                        style: mont.copyWith(fontSize: 14, color: Colors.white),
+                      ),
+                    ],
+                  ),
+                  backgroundColor: Color(0xFF5664F5),
+                  behavior: SnackBarBehavior.floating,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                  duration: Duration(seconds: 3),
+                ),
+              );
+            }
+          });
+        }
+      }
+    } catch (e) {
+      print('Error loading auto-saved data: $e');
+    }
+  }
+
+  Future<void> _clearAutoSavedData() async {
+    try {
+      await _prefs.remove(_autoSaveKey);
+      _lastSaveTime = null;
+    } catch (e) {
+      print('Error clearing auto-saved data: $e');
+    }
+  }
+
+  Widget _buildAutoSaveIndicator() {
+    final isSmallScreen = MediaQuery.of(context).size.width < 400;
+
+    if (_isAutoSaving) {
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: isSmallScreen ? 10 : 12,
+            height: isSmallScreen ? 10 : 12,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              valueColor: AlwaysStoppedAnimation<Color>(Color(0xFF5664F5)),
+            ),
+          ),
+          SizedBox(width: isSmallScreen ? 3 : 4),
+          Text(
+            'Saving...',
+            style: mont.copyWith(
+              color: Color(0xFF5664F5),
+              fontSize: isSmallScreen ? 10 : 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      );
+    } else if (_lastSaveTime != null) {
+      final now = DateTime.now();
+      final difference = now.difference(_lastSaveTime!);
+      String timeText;
+
+      if (difference.inSeconds < 60) {
+        timeText = isSmallScreen ? 'Saved now' : 'Saved just now';
+      } else if (difference.inMinutes < 60) {
+        timeText = 'Saved ${difference.inMinutes}m ago';
+      } else {
+        timeText = 'Saved ${difference.inHours}h ago';
+      }
+
+      return Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            SolarIconsOutline.checkCircle,
+            size: isSmallScreen ? 10 : 12,
+            color: Colors.green,
+          ),
+          SizedBox(width: isSmallScreen ? 3 : 4),
+          Text(
+            timeText,
+            style: mont.copyWith(
+              color: Colors.green,
+              fontSize: isSmallScreen ? 10 : 12,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      );
+    }
+    return SizedBox.shrink();
+  }
+
+  @override
+  void dispose() {
+    // Cancel auto-save timer
+    _debounceTimer?.cancel();
+
+    // Dispose controllers
+    _titleController.dispose();
+    _descriptionController.dispose();
+    _highlightController.dispose();
+    _referenceLinkController.dispose();
+
+    super.dispose();
   }
 
   @override
@@ -769,12 +1001,20 @@ class _PostScreenState extends State<PostScreen> {
                                   fontWeight: FontWeight.bold),
                             ),
                             const SizedBox(height: 4),
-                            Text(
-                              'Fill the details and see the magic',
-                              style: mont.copyWith(
-                                  color: Color(0xFF3E1885),
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.w300),
+                            Row(
+                              children: [
+                                Text(
+                                  'Fill the details and see the magic',
+                                  style: mont.copyWith(
+                                      color: Color(0xFF3E1885),
+                                      fontSize: 15,
+                                      fontWeight: FontWeight.w300),
+                                ),
+                                // if (_isAutoSaving || _lastSaveTime != null) ...[
+                                //   SizedBox(width: 8),
+                                //   _buildAutoSaveIndicator(),
+                                // ],
+                              ],
                             ),
                           ],
                         ),
@@ -886,6 +1126,7 @@ class _PostScreenState extends State<PostScreen> {
                                 setState(() {
                                   _selectedProfileId = value;
                                 });
+                                _triggerAutoSave();
                               },
                               decoration: InputDecoration(
                                 filled: true,
@@ -1282,6 +1523,7 @@ class _PostScreenState extends State<PostScreen> {
                                     ? selectedPlatforms.remove('whatsapp')
                                     : selectedPlatforms.add('whatsapp');
                               });
+                              _triggerAutoSave();
                             },
                           ),
                           const SizedBox(width: 12),
@@ -1298,6 +1540,7 @@ class _PostScreenState extends State<PostScreen> {
                                     ? selectedPlatforms.remove('instagram')
                                     : selectedPlatforms.add('instagram');
                               });
+                              _triggerAutoSave();
                             },
                           ),
                           const SizedBox(width: 12),
@@ -1314,6 +1557,7 @@ class _PostScreenState extends State<PostScreen> {
                                     ? selectedPlatforms.remove('facebook')
                                     : selectedPlatforms.add('facebook');
                               });
+                              _triggerAutoSave();
                             },
                           ),
                         ],
@@ -1333,6 +1577,7 @@ class _PostScreenState extends State<PostScreen> {
                           _scheduledTimezone = timezone;
                           _recurringSchedule = recurring;
                         });
+                        _triggerAutoSave();
                       },
                     ),
                     const SizedBox(height: 24),
